@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Two Squares: Co‑Op Scroller</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game"></canvas>
+    <div class="hud">
+      <div class="pill"><strong>Level:</strong> <span id="levelTxt">1</span></div>
+      <div class="pill healthWrap">
+        <div class="heart" aria-hidden="true"></div>
+        <div class="healthBar" aria-label="Shared Health"><div id="healthFill" class="healthFill"></div></div>
+        <div id="healthTxt" style="min-width:28px;text-align:right;font-variant-numeric: tabular-nums;">5/5</div>
+      </div>
+      <div class="pill" id="difficultyTxt" style="color: #ffd166;"><strong>Hard</strong></div>
+      <div class="pill btn" id="muteBtn" title="Toggle sound effects (M)">🔊 Sound</div>
+      <div class="pill btn" id="resetBtn" title="Restart level (R)">↻ Restart</div>
+      <div class="pill btn" id="levelSelectBtn" title="Select level (L)">📋 Level</div>
+    </div>
+    <div id="overlay" class="centerOverlay">
+      <div class="card">
+        <h1>Two Squares: Co‑Op Scroller</h1>
+        <p>Control <span style="color:#ff5555;font-weight:700;">Red</span> with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (larger, slower) and <span style="color:#5fb0ff;font-weight:700;">Blue</span> with the <kbd>Arrows</kbd> (smaller, faster). They share <strong>10 HP</strong> per level.</p>
+        <p><strong>Blue</strong> auto‑fires toward <strong>Red</strong> — bullets pass through Red and damage enemies. Enemy circles/tanks target either player. Walls are small; beware of ricochet turrets.</p>
+        <p><strong>COOPERATIVE ABILITY:</strong> <kbd>Space</kbd> for <strong>Combined Attack</strong> (8s cooldown, when close).</p>
+        <p>Map scrolls; clear all enemies to advance. <kbd>Enter</kbd> to start • <kbd>R</kbd> to restart level • <kbd>M</kbd> to toggle sound effects • <kbd>L</kbd> to select level</p>
+        
+        <div style="margin-top: 20px; text-align: center;">
+          <p style="margin-bottom: 12px; font-weight: 600;">Select Difficulty:</p>
+          <div style="display: flex; gap: 8px; justify-content: center;">
+            <button id="easyBtn" class="difficultyBtn" data-difficulty="easy" style="background: rgba(76, 175, 80, 0.2); border-color: rgba(76, 175, 80, 0.4);">Easy</button>
+            <button id="mediumBtn" class="difficultyBtn" data-difficulty="medium" style="background: rgba(255, 152, 0, 0.2); border-color: rgba(255, 152, 0, 0.4);">Medium</button>
+            <button id="hardBtn" class="difficultyBtn" data-difficulty="hard" style="background: rgba(244, 67, 54, 0.2); border-color: rgba(244, 67, 54, 0.4);">Hard</button>
+          </div>
+        </div>
+        
+        <div style="margin-top: 20px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.6);">
+          Music from <a href="https://store.steampowered.com/app/2379780/Balatro/" target="_blank" rel="noopener noreferrer" style="color: rgba(255,255,255,0.7);">Balatro</a> (LocalThunk, 2024)
+        </div>
+      </div>
+    </div>
+    <div id="levelSelectOverlay" class="centerOverlay" style="display:none;">
+      <div class="card">
+        <h1>Select Level</h1>
+        <div id="levelButtons" style="display:grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0;">
+          <!-- Level buttons will be generated here -->
+        </div>
+        <p style="text-align:center; margin-top: 16px;"><kbd>Esc</kbd> to cancel</p>
+      </div>
+    </div>
+    <div class="toast" id="toast" style="display:none;"></div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

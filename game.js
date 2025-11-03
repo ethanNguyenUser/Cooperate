@@ -1,80 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Two Squares: Co‑Op Scroller</title>
-  <style>
-    html, body { height: 100%; margin: 0; background: #5b965b; color: #e6edf3; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", sans-serif; }
-    #wrap { position: relative; height: 100%; }
-    canvas { display:block; width:100%; height:100%; background: #456345; }
-    .hud { position: absolute; left: 12px; top: 12px; display:flex; gap:12px; align-items:center; z-index: 2; }
-    .pill { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); padding: 6px 10px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
-    .btn { cursor: pointer; user-select:none; transition: transform .08s ease; }
-    .btn:active { transform: scale(0.96); }
-    .difficultyBtn { cursor: pointer; user-select:none; transition: all .2s ease; padding: 8px 16px; border: 2px solid; border-radius: 8px; font-weight: 600; font-size: 14px; color: #e6edf3; }
-    .difficultyBtn:hover { transform: scale(1.05); }
-    .difficultyBtn.active { transform: scale(1.1); box-shadow: 0 0 20px rgba(255,255,255,0.3); }
-    .centerOverlay { position: absolute; inset: 0; display: grid; place-items: center; z-index: 3; pointer-events:none; }
-    .card { pointer-events:auto; max-width: 720px; background: rgba(15,22,35,0.9); border: 1px solid rgba(255,255,255,0.14); padding: 20px; border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.4); }
-    h1 { margin: 0 0 6px; font-weight: 700; font-size: 22px; letter-spacing: 0.2px; }
-    p { margin: 6px 0; line-height: 1.45; color: #c8d1da; }
-    kbd { background: #101a2b; border: 1px solid #1a2741; border-bottom-width: 3px; padding: 2px 6px; border-radius: 6px; font-weight: 600; color:#d7e4ff; }
-    .healthWrap { display:flex; gap:6px; align-items:center; }
-    .heart { width: 18px; height: 18px; background: conic-gradient(from 180deg at 50% 40%, #ff6b6b, #ff3b3b 40%, #ff7b7b 60%, #ff6b6b); clip-path: path("M 9 3 C 9 1 8.2 0 6.5 0 C 5 0 4 0.9 3.5 1.7 C 3 0.9 2 0 0.5 0 C -1.2 0 -2 1 -2 3 c 0 3 5.5 6.5 5.5 6.5 S 9 6 9 3 Z"); transform: translateX(4px) translateY(3px) scale(1.1); }
-    .healthBar { width: 120px; height: 10px; border-radius: 999px; background: linear-gradient(90deg, #2a354d, #1d263b); overflow: hidden; border: 1px solid #394662; }
-    .healthFill { height:100%; background: linear-gradient(90deg, #ff3b3b, #ffb199); width:100%; transition: width .15s ease; }
-    .toast { position:absolute; right: 12px; bottom: 12px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); padding: 10px 12px; border-radius: 12px; font-size: 13px; opacity: 0.9; }
-  </style>
-</head>
-<body>
-  <div id="wrap">
-    <canvas id="game"></canvas>
-    <div class="hud">
-      <div class="pill"><strong>Level:</strong> <span id="levelTxt">1</span></div>
-      <div class="pill healthWrap">
-        <div class="heart" aria-hidden="true"></div>
-        <div class="healthBar" aria-label="Shared Health"><div id="healthFill" class="healthFill"></div></div>
-        <div id="healthTxt" style="min-width:28px;text-align:right;font-variant-numeric: tabular-nums;">5/5</div>
-      </div>
-      <div class="pill" id="difficultyTxt" style="color: #ffd166;"><strong>Hard</strong></div>
-      <div class="pill btn" id="muteBtn" title="Toggle sound effects (M)">🔊 Sound</div>
-      <div class="pill btn" id="resetBtn" title="Restart level (R)">↻ Restart</div>
-      <div class="pill btn" id="levelSelectBtn" title="Select level (L)">📋 Level</div>
-    </div>
-    <div id="overlay" class="centerOverlay">
-      <div class="card">
-        <h1>Two Squares: Co‑Op Scroller</h1>
-        <p>Control <span style="color:#ff5555;font-weight:700;">Red</span> with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (larger, slower) and <span style="color:#5fb0ff;font-weight:700;">Blue</span> with the <kbd>Arrows</kbd> (smaller, faster). They share <strong>10 HP</strong> per level.</p>
-        <p><strong>Blue</strong> auto‑fires toward <strong>Red</strong> — bullets pass through Red and damage enemies. Enemy circles/tanks target either player. Walls are small; beware of ricochet turrets.</p>
-        <p><strong>NEW COOPERATIVE ABILITIES:</strong> <kbd>Space</kbd> for <strong>Combined Attack</strong> (8s cooldown, when close), <kbd>Shift</kbd> for <strong>Leash Damage</strong> (4s cooldown, damages enemies touching the leash).</p>
-        <p>Map scrolls; clear all enemies to advance. <kbd>Enter</kbd> to start • <kbd>R</kbd> to restart level • <kbd>M</kbd> to toggle sound effects • <kbd>L</kbd> to select level</p>
-        
-        <div style="margin-top: 20px; text-align: center;">
-          <p style="margin-bottom: 12px; font-weight: 600;">Select Difficulty:</p>
-          <div style="display: flex; gap: 8px; justify-content: center;">
-            <button id="easyBtn" class="difficultyBtn" data-difficulty="easy" style="background: rgba(76, 175, 80, 0.2); border-color: rgba(76, 175, 80, 0.4);">Easy</button>
-            <button id="mediumBtn" class="difficultyBtn" data-difficulty="medium" style="background: rgba(255, 152, 0, 0.2); border-color: rgba(255, 152, 0, 0.4);">Medium</button>
-            <button id="hardBtn" class="difficultyBtn" data-difficulty="hard" style="background: rgba(244, 67, 54, 0.2); border-color: rgba(244, 67, 54, 0.4);">Hard</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div id="levelSelectOverlay" class="centerOverlay" style="display:none;">
-      <div class="card">
-        <h1>Select Level</h1>
-        <div id="levelButtons" style="display:grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0;">
-          <!-- Level buttons will be generated here -->
-        </div>
-        <p style="text-align:center; margin-top: 16px;"><kbd>Esc</kbd> to cancel</p>
-      </div>
-    </div>
-    <div class="toast" id="toast" style="display:none;"></div>
-  </div>
-
-  <script>
-  // ===================== Game Configuration Constants =====================
-  const GAME_CONFIG = {
+// ===================== Game Configuration Constants =====================
+// Background music attribution: Music from Balatro (LocalThunk, 2024)
+const GAME_CONFIG = {
     // Difficulty Configuration
     DIFFICULTY: {
       CURRENT: 'hard', // 'easy', 'medium', 'hard'
@@ -112,9 +38,7 @@
       LEASH_MAX_DISTANCE: 600,
       // New cooperative mechanics
       COMBINED_ATTACK_RANGE: 150, // distance for combined attacks
-      COMBINED_ATTACK_COOLDOWN: 8, // seconds
-      LEASH_DAMAGE_COOLDOWN: 4, // seconds
-      LEASH_DAMAGE_AMOUNT: 2 // damage to enemies touching leash
+      COMBINED_ATTACK_COOLDOWN: 8 // seconds
     },
 
     // Enemy Configuration
@@ -276,6 +200,7 @@
       playTone(1480.0, 0.3); // F#
     }
     // Background music (HTMLAudioElement)
+    // Music from Balatro (LocalThunk, 2024)
     function _ensureMusic(levelIndex){ 
       if(!musicEl || musicEl.src !== `${window.location.origin}${window.location.pathname.replace(/\/[^\/]*$/, '')}/level_${levelIndex + 1}.mp3`){
         if(musicEl){ musicEl.pause(); }
@@ -318,11 +243,6 @@
         triggerCombinedAttack();
       }
     }
-    if(e.key === 'Shift'){ // Shift key for leash damage
-      if(Game.state === 'playing' && Game.leashDamageCooldown <= 0){
-        triggerLeashDamage();
-      }
-    }
   });
   window.addEventListener('keyup', e=> Keys.down.delete(e.key));
 
@@ -352,13 +272,7 @@
     powerUpStacks: { speed: 0, fireRate: 0, spread: 0 },
     powerUpDurations: { speed: [], fireRate: [], spread: [] },
     // New cooperative mechanics
-    sharedEnergy: GAME_CONFIG.PLAYER.SHARED_ENERGY,
-    sharedEnergyMax: GAME_CONFIG.PLAYER.SHARED_ENERGY,
-    combinedAttackCooldown: 0,
-    leashDamageCooldown: 0,
-    leashDamageActive: false,
-    leashDamageStartTime: 0,
-    leashDamageDuration: 0
+    combinedAttackCooldown: 0
   };
 
   class Player {
@@ -846,15 +760,6 @@
     
     // Reset cooperative mechanics
     Game.combinedAttackCooldown = 0;
-    Game.leashDamageCooldown = 0;
-    Game.leashDamageActive = false;
-    Game.leashDamageStartTime = 0;
-    Game.leashDamageDuration = 0;
-    
-    // Reset enemy leash damage flags
-    for(const enemy of Game.enemies){
-      enemy.leashDamaged = false;
-    }
     
     // Spawn initial star
     spawnStar();
@@ -871,6 +776,7 @@
 
   // Change canvas background color for levels 1-5
   function updateBackgroundForLevel(){
+  
     const lvl = Game.levelIndex + 1; // human-readable
     const colors = ['#2a4a7a', '#4a2a6a', '#2a6a4a', '#6a4a2a', '#6a2a2a']; // blue, purple, green, orange, red (dark, low saturation)
     const color = colors[Math.min(lvl - 1, colors.length - 1)];
@@ -1641,54 +1547,11 @@
     const distance = Math.hypot(dx, dy);
     const maxDistance = GAME_CONFIG.PLAYER.LEASH_MAX_DISTANCE;
     
-    // Draw leash line (black to red based on distance, or special effect when damage is active)
+    // Draw leash line (black to red based on distance)
     const leashRatio = Math.min(distance / maxDistance, 1);
-    let leashColor;
-    
-    if(Game.leashDamageActive){
-      // Special effect when leash damage is active
-      leashColor = 'rgba(255, 255, 0, 0.9)'; // Bright yellow
-      g.lineWidth = 8; // Thicker line
-      g.shadowColor = '#ffff00';
-      g.shadowBlur = 20;
-      
-      // Draw damage area indicator with pulsing effect
-      const leashWidth = 60;
-      const pulseIntensity = 0.3 + 0.2 * Math.sin(performance.now() * 0.01); // Pulsing effect
-      
-      // Draw the main damage zone
-      g.beginPath();
-      g.strokeStyle = `rgba(255, 255, 0, ${pulseIntensity})`;
-      g.lineWidth = leashWidth;
-      g.globalAlpha = 0.3;
-      g.moveTo(red.x, red.y);
-      g.lineTo(blue.x, blue.y);
-      g.stroke();
-      
-      // Draw additional glow effect
-      g.beginPath();
-      g.strokeStyle = `rgba(255, 255, 0, ${pulseIntensity * 0.5})`;
-      g.lineWidth = leashWidth + 20;
-      g.globalAlpha = 0.15;
-      g.moveTo(red.x, red.y);
-      g.lineTo(blue.x, blue.y);
-      g.stroke();
-      
-      // Draw debug collision area (80 pixels wide as used in collision detection)
-      g.beginPath();
-      g.strokeStyle = `rgba(255, 0, 255, ${pulseIntensity * 0.7})`; // Magenta for debug
-      g.lineWidth = 80; // Match the collision detection width
-      g.globalAlpha = 0.2;
-      g.moveTo(red.x, red.y);
-      g.lineTo(blue.x, blue.y);
-      g.stroke();
-      
-      g.globalAlpha = 0.9;
-    } else {
-      leashColor = `rgba(${Math.floor(leashRatio * 255)}, 0, 0, 0.6)`;
-      g.lineWidth = 3;
-      g.shadowBlur = 0;
-    }
+    const leashColor = `rgba(${Math.floor(leashRatio * 255)}, 0, 0, 0.6)`;
+    g.lineWidth = 3;
+    g.shadowBlur = 0;
     
     g.beginPath();
     g.strokeStyle = leashColor;
@@ -1910,36 +1773,6 @@
     combinedDiv.appendChild(combinedCooldown);
     abilitiesDiv.appendChild(combinedDiv);
     
-    // Leash Damage
-    const leashDiv = document.createElement('div');
-    leashDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 11px;';
-    
-    const leashLabel = document.createElement('span');
-    leashLabel.textContent = '⚡ Leash Damage (Shift)';
-    leashLabel.style.color = Game.leashDamageCooldown > 0 ? '#666' : '#2196f3';
-    
-    const leashCooldown = document.createElement('span');
-    leashCooldown.textContent = Game.leashDamageCooldown > 0 ? `${Game.leashDamageCooldown.toFixed(1)}s` : 'READY';
-    leashCooldown.style.color = Game.leashDamageCooldown > 0 ? '#ff9800' : '#2196f3';
-    
-    leashDiv.appendChild(leashLabel);
-    leashDiv.appendChild(leashCooldown);
-    abilitiesDiv.appendChild(leashDiv);
-    
-    // Active status indicators
-    if(Game.leashDamageActive){
-      const activeDiv = document.createElement('div');
-      activeDiv.style.cssText = 'text-align: center; font-size: 11px; color: #ffeb3b; font-weight: bold; margin-top: 4px;';
-      
-      // Calculate remaining time
-      const currentTime = performance.now();
-      const elapsed = currentTime - Game.leashDamageStartTime;
-      const remaining = Math.max(0, (Game.leashDamageDuration - elapsed) / 1000);
-      
-      activeDiv.textContent = `⚡ LEASH DAMAGE ZONE: ${remaining.toFixed(1)}s`;
-      abilitiesDiv.appendChild(activeDiv);
-    }
-    
     coopDisplay.appendChild(abilitiesDiv);
   }
 
@@ -2147,195 +1980,7 @@
     if(Game.combinedAttackCooldown > 0){
       Game.combinedAttackCooldown -= dt;
     }
-    
-    if(Game.leashDamageCooldown > 0){
-      Game.leashDamageCooldown -= dt;
-    }
-    
-    // Handle persistent leash damage zone
-    if(Game.leashDamageActive){
-      const currentTime = performance.now();
-      const elapsed = currentTime - Game.leashDamageStartTime;
-      
-      // Check if leash damage zone has expired
-      if(elapsed >= Game.leashDamageDuration){
-        // Reset all enemy leash damage flags when zone expires
-        for(const enemy of Game.enemies){
-          if(enemy.leashDamaged){
-            enemy.leashDamaged = false;
-            console.log(`Reset leash damage flag for enemy at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)})`);
-          }
-        }
-        
-        Game.leashDamageActive = false;
-        Game.leashDamageStartTime = 0;
-        Game.leashDamageDuration = 0;
-        console.log('Leash damage zone expired');
-        return;
-      }
-      
-      // Check for enemies entering the damage zone
-      const { red, blue } = Game;
-      if(red && blue){
-        const leashWidth = 80; // Wider collision area for better reliability
-        
-        for(const enemy of Game.enemies){
-          if(!enemy.alive) continue;
-          
-          // Calculate leash line vector
-          const dx = red.x - blue.x;
-          const dy = red.y - blue.y;
-          const distance = Math.hypot(dx, dy);
-          
-          if(distance === 0) continue;
-          
-          // Calculate distance from enemy to leash line using correct projection
-          const enemyToRedX = enemy.x - red.x;
-          const enemyToRedY = enemy.y - red.y;
-          
-          // Project enemy position onto leash line
-          // This gives us the parameter t where 0 = red player, 1 = blue player
-          const t = (enemyToRedX * dx + enemyToRedY * dy) / (distance * distance);
-          
-          // Clamp t to the leash segment (between 0 and 1)
-          const t_clamped = Math.max(0, Math.min(1, t));
-          
-          // Calculate the closest point on the leash line to the enemy
-          const closestX = red.x + t_clamped * dx;
-          const closestY = red.y + t_clamped * dy;
-          
-          // Calculate the actual distance from enemy to the closest point on leash
-          const distToLeash = Math.hypot(enemy.x - closestX, enemy.y - closestY);
-          
-          // Debug logging
-          console.log(`Enemy at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}), t: ${t.toFixed(3)}, t_clamped: ${t_clamped.toFixed(3)}`);
-          console.log(`Closest point on leash: (${closestX.toFixed(1)}, ${closestY.toFixed(1)})`);
-          console.log(`Distance to leash: ${distToLeash.toFixed(1)}, threshold: ${(enemy.r + leashWidth/2).toFixed(1)}, already damaged: ${enemy.leashDamaged}`);
-          
-          // Check if enemy is in the damage zone
-          if(distToLeash <= (enemy.r + leashWidth/2)){
-            // Check if we haven't already damaged this enemy in this activation
-            if(!enemy.leashDamaged){
-              // Damage the enemy
-              enemy.hp -= GAME_CONFIG.PLAYER.LEASH_DAMAGE_AMOUNT;
-              enemy.leashDamaged = true; // Mark as damaged to prevent multiple hits
-              
-              console.log(`HIT! Enemy damaged, new HP: ${enemy.hp}`);
-              showToast('OUCHHCH');
-              
-              // Visual feedback
-              spawnHit(enemy.x, enemy.y);
-              addScreenShake(3, 0.1);
-              AudioSys.hit();
-              
-              // Check if enemy was killed
-              if(!enemy.alive){
-                spawnPop(enemy.x, enemy.y);
-                AudioSys.enemyDeath();
-              }
-            } else {
-              console.log(`Enemy already damaged in this activation`);
-            }
-          } else {
-            // Additional check: is the enemy within the bounding box of the leash area?
-            // This catches enemies that might be near the leash but outside the line projection
-            const leashStartX = Math.min(red.x, blue.x) - leashWidth/2;
-            const leashStartY = Math.min(red.y, blue.y) - leashWidth/2;
-            const leashEndX = Math.max(red.x, blue.x) + leashWidth/2;
-            const leashEndY = Math.max(red.y, blue.y) + leashWidth/2;
-            
-            const inBoundingBox = enemy.x >= leashStartX && enemy.x <= leashEndX && 
-                                 enemy.y >= leashStartY && enemy.y <= leashEndY;
-            
-            if(inBoundingBox && !enemy.leashDamaged){
-              // Double-check distance to leash line with a more generous threshold
-              const generousThreshold = leashWidth/2 + enemy.r + 10; // Extra 10 pixels for safety
-              
-              if(distToLeash <= generousThreshold){
-                // Damage the enemy
-                enemy.hp -= GAME_CONFIG.PLAYER.LEASH_DAMAGE_AMOUNT;
-                enemy.leashDamaged = true;
-                
-                console.log(`BOUNDING BOX HIT! Enemy in area, new HP: ${enemy.hp}`);
-                showToast('OUCHHCH (area)');
-                
-                // Visual feedback
-                spawnHit(enemy.x, enemy.y);
-                addScreenShake(3, 0.1);
-                AudioSys.hit();
-                
-                // Check if enemy was killed
-                if(!enemy.alive){
-                  spawnPop(enemy.x, enemy.y);
-                  AudioSys.enemyDeath();
-                }
-              }
-            }
-            
-            // Fallback: also check if enemy is very close to either player
-            const distToRed = Math.hypot(enemy.x - red.x, enemy.y - red.y);
-            const distToBlue = Math.hypot(enemy.x - blue.x, enemy.y - blue.y);
-            const closeThreshold = 50; // Close to either player
-            
-            if((distToRed <= closeThreshold || distToBlue <= closeThreshold) && !enemy.leashDamaged){
-              // Damage the enemy
-              enemy.hp -= GAME_CONFIG.PLAYER.LEASH_DAMAGE_AMOUNT;
-              enemy.leashDamaged = true;
-              
-              console.log(`FALLBACK HIT! Enemy close to player, new HP: ${enemy.hp}`);
-              showToast('OUCHHCH (close)');
-              
-              // Visual feedback
-              spawnHit(enemy.x, enemy.y);
-              addScreenShake(3, 0.1);
-              AudioSys.hit();
-              
-              // Check if enemy was killed
-              if(!enemy.alive){
-                spawnPop(enemy.x, enemy.y);
-                AudioSys.enemyDeath();
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  function triggerLeashDamage(){
-    const { red, blue } = Game;
-    if(!red || !blue) return;
-    
-    // Check cooldown
-    if(Game.leashDamageCooldown > 0) {
-      showToast('Leash damage recharging...');
-      return;
-    }
-    
-    // Set cooldown (4 seconds)
-    Game.leashDamageCooldown = GAME_CONFIG.PLAYER.LEASH_DAMAGE_COOLDOWN;
-    
-    // Activate leash damage zone for 1 second
-    Game.leashDamageActive = true;
-    Game.leashDamageStartTime = performance.now();
-    Game.leashDamageDuration = 1000; // 1 second in milliseconds
-    
-    // Debug logging
-    console.log(`Leash damage activated at ${Game.leashDamageStartTime}`);
-    console.log(`Red player at (${red.x.toFixed(1)}, ${red.y.toFixed(1)})`);
-    console.log(`Blue player at (${blue.x.toFixed(1)}, ${blue.y.toFixed(1)})`);
-    console.log(`Leash length: ${Math.hypot(red.x - blue.x, red.y - blue.y).toFixed(1)}`);
-    console.log(`Active enemies: ${Game.enemies.filter(e => e.alive).length}`);
-    
-    // Visual and audio feedback
-    showToast('LEASH DAMAGE ZONE ACTIVATED!');
-    addScreenShake(6, 0.2);
-    
-    updateHUD();
   }
 
 
 
-  </script>
-</body>
-</html>
