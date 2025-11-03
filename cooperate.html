@@ -1,0 +1,2341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Two Squares: Co‑Op Scroller</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #5b965b; color: #e6edf3; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", sans-serif; }
+    #wrap { position: relative; height: 100%; }
+    canvas { display:block; width:100%; height:100%; background: #456345; }
+    .hud { position: absolute; left: 12px; top: 12px; display:flex; gap:12px; align-items:center; z-index: 2; }
+    .pill { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); padding: 6px 10px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
+    .btn { cursor: pointer; user-select:none; transition: transform .08s ease; }
+    .btn:active { transform: scale(0.96); }
+    .difficultyBtn { cursor: pointer; user-select:none; transition: all .2s ease; padding: 8px 16px; border: 2px solid; border-radius: 8px; font-weight: 600; font-size: 14px; color: #e6edf3; }
+    .difficultyBtn:hover { transform: scale(1.05); }
+    .difficultyBtn.active { transform: scale(1.1); box-shadow: 0 0 20px rgba(255,255,255,0.3); }
+    .centerOverlay { position: absolute; inset: 0; display: grid; place-items: center; z-index: 3; pointer-events:none; }
+    .card { pointer-events:auto; max-width: 720px; background: rgba(15,22,35,0.9); border: 1px solid rgba(255,255,255,0.14); padding: 20px; border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+    h1 { margin: 0 0 6px; font-weight: 700; font-size: 22px; letter-spacing: 0.2px; }
+    p { margin: 6px 0; line-height: 1.45; color: #c8d1da; }
+    kbd { background: #101a2b; border: 1px solid #1a2741; border-bottom-width: 3px; padding: 2px 6px; border-radius: 6px; font-weight: 600; color:#d7e4ff; }
+    .healthWrap { display:flex; gap:6px; align-items:center; }
+    .heart { width: 18px; height: 18px; background: conic-gradient(from 180deg at 50% 40%, #ff6b6b, #ff3b3b 40%, #ff7b7b 60%, #ff6b6b); clip-path: path("M 9 3 C 9 1 8.2 0 6.5 0 C 5 0 4 0.9 3.5 1.7 C 3 0.9 2 0 0.5 0 C -1.2 0 -2 1 -2 3 c 0 3 5.5 6.5 5.5 6.5 S 9 6 9 3 Z"); transform: translateX(4px) translateY(3px) scale(1.1); }
+    .healthBar { width: 120px; height: 10px; border-radius: 999px; background: linear-gradient(90deg, #2a354d, #1d263b); overflow: hidden; border: 1px solid #394662; }
+    .healthFill { height:100%; background: linear-gradient(90deg, #ff3b3b, #ffb199); width:100%; transition: width .15s ease; }
+    .toast { position:absolute; right: 12px; bottom: 12px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); padding: 10px 12px; border-radius: 12px; font-size: 13px; opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game"></canvas>
+    <div class="hud">
+      <div class="pill"><strong>Level:</strong> <span id="levelTxt">1</span></div>
+      <div class="pill healthWrap">
+        <div class="heart" aria-hidden="true"></div>
+        <div class="healthBar" aria-label="Shared Health"><div id="healthFill" class="healthFill"></div></div>
+        <div id="healthTxt" style="min-width:28px;text-align:right;font-variant-numeric: tabular-nums;">5/5</div>
+      </div>
+      <div class="pill" id="difficultyTxt" style="color: #ffd166;"><strong>Hard</strong></div>
+      <div class="pill btn" id="muteBtn" title="Toggle sound effects (M)">🔊 Sound</div>
+      <div class="pill btn" id="resetBtn" title="Restart level (R)">↻ Restart</div>
+      <div class="pill btn" id="levelSelectBtn" title="Select level (L)">📋 Level</div>
+    </div>
+    <div id="overlay" class="centerOverlay">
+      <div class="card">
+        <h1>Two Squares: Co‑Op Scroller</h1>
+        <p>Control <span style="color:#ff5555;font-weight:700;">Red</span> with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (larger, slower) and <span style="color:#5fb0ff;font-weight:700;">Blue</span> with the <kbd>Arrows</kbd> (smaller, faster). They share <strong>10 HP</strong> per level.</p>
+        <p><strong>Blue</strong> auto‑fires toward <strong>Red</strong> — bullets pass through Red and damage enemies. Enemy circles/tanks target either player. Walls are small; beware of ricochet turrets.</p>
+        <p><strong>NEW COOPERATIVE ABILITIES:</strong> <kbd>Space</kbd> for <strong>Combined Attack</strong> (8s cooldown, when close), <kbd>Shift</kbd> for <strong>Leash Damage</strong> (4s cooldown, damages enemies touching the leash).</p>
+        <p>Map scrolls; clear all enemies to advance. <kbd>Enter</kbd> to start • <kbd>R</kbd> to restart level • <kbd>M</kbd> to toggle sound effects • <kbd>L</kbd> to select level</p>
+        
+        <div style="margin-top: 20px; text-align: center;">
+          <p style="margin-bottom: 12px; font-weight: 600;">Select Difficulty:</p>
+          <div style="display: flex; gap: 8px; justify-content: center;">
+            <button id="easyBtn" class="difficultyBtn" data-difficulty="easy" style="background: rgba(76, 175, 80, 0.2); border-color: rgba(76, 175, 80, 0.4);">Easy</button>
+            <button id="mediumBtn" class="difficultyBtn" data-difficulty="medium" style="background: rgba(255, 152, 0, 0.2); border-color: rgba(255, 152, 0, 0.4);">Medium</button>
+            <button id="hardBtn" class="difficultyBtn" data-difficulty="hard" style="background: rgba(244, 67, 54, 0.2); border-color: rgba(244, 67, 54, 0.4);">Hard</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="levelSelectOverlay" class="centerOverlay" style="display:none;">
+      <div class="card">
+        <h1>Select Level</h1>
+        <div id="levelButtons" style="display:grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0;">
+          <!-- Level buttons will be generated here -->
+        </div>
+        <p style="text-align:center; margin-top: 16px;"><kbd>Esc</kbd> to cancel</p>
+      </div>
+    </div>
+    <div class="toast" id="toast" style="display:none;"></div>
+  </div>
+
+  <script>
+  // ===================== Game Configuration Constants =====================
+  const GAME_CONFIG = {
+    // Difficulty Configuration
+    DIFFICULTY: {
+      CURRENT: 'hard', // 'easy', 'medium', 'hard'
+      MULTIPLIERS: {
+        easy: {
+          enemyFireRate: 0.5,    // 50% slower firing
+          enemyBulletSpeed: 0.7, // 30% slower bullets
+          enemySpeed: 0.5        // 50% slower movement
+        },
+        medium: {
+          enemyFireRate: 0.7,   // 30% slower firing
+          enemyBulletSpeed: 0.85, // 15% slower bullets
+          enemySpeed: 0.7        // 30% slower movement
+        },
+        hard: {
+          enemyFireRate: 1.0,    // Base values (current)
+          enemyBulletSpeed: 1.0, // Base values (current)
+          enemySpeed: 1.0        // Base values (current)
+        }
+      }
+    },
+
+    // Player Configuration
+    PLAYER: {
+      RED_SIZE: 50,
+      RED_SPEED: 500,
+      RED_SPEED_MULTIPLIER: 0.8,
+      BLUE_SIZE: 30,
+      BLUE_SPEED: 500,
+      START_RED_X: 200,
+      START_RED_Y: 200,
+      START_BLUE_X: 100,
+      START_BLUE_Y: 100,
+      SHARED_HP: 10,
+      LEASH_MAX_DISTANCE: 600,
+      // New cooperative mechanics
+      COMBINED_ATTACK_RANGE: 150, // distance for combined attacks
+      COMBINED_ATTACK_COOLDOWN: 8, // seconds
+      LEASH_DAMAGE_COOLDOWN: 4, // seconds
+      LEASH_DAMAGE_AMOUNT: 2 // damage to enemies touching leash
+    },
+
+    // Enemy Configuration
+    ENEMY: {
+      RADIUS: 20,
+      HP: {
+        TURRET: 4,
+        FAST_TANK: 2,
+        SPREAD_TANK: 3
+      },
+      SPEED: {
+        TURRET: 10,
+        FAST_TANK: 250,
+        SPREAD_TANK: 300
+      },
+      SHOOTING: {
+        TURRET_FIRE_RATE: 1.3,
+        FAST_TANK_FIRE_RATE: 1.2,
+        SPREAD_TANK_FIRE_RATE: 2,
+        FIRE_VARIANCE_MIN: -0.2,
+        FIRE_VARIANCE_MAX: 0.25,
+        SPREAD_ANGLE: 0.22
+      },
+      MOVEMENT: {
+        SPREAD_TANK_MOVE_TIMER: 1.2,
+        SPREAD_TANK_SPEED_MULTIPLIER: 0.6
+      }
+    },
+
+    // Bullet Configuration
+    BULLET: {
+      DEFAULT_SPEED: 100,
+      DEFAULT_RADIUS: 4,
+      DEFAULT_DAMAGE: 1,
+      DEFAULT_BOUNCES: 1,
+      DEFAULT_MAX_LIFE: 5,
+      BLUE_SPEED: 560,
+      ENEMY_SPEED: 350,
+      RICOCHET_BOUNCES: 2,
+      // New cooperative bullet types
+      COMBINED_ATTACK_SPEED: 800,
+      COMBINED_ATTACK_RADIUS: 8,
+      COMBINED_ATTACK_DAMAGE: 3,
+      COMBINED_ATTACK_MAX_LIFE: 8
+    },
+
+    // Blue Player Auto-Shooting
+    BLUE_SHOOTING: {
+      FIRE_RATE: 60/109.094
+    },
+
+    // Level Generation
+    LEVEL: {
+      BASE_WIDTH: Math.floor(2200 * 0.7 * 1.3),
+      BASE_HEIGHT: Math.floor(1600 * 0.7 * 1.3),
+      WIDTH_GROWTH_PER_LEVEL: Math.floor(200 * 0.7 * 1.3),
+      HEIGHT_GROWTH_PER_LEVEL: Math.floor(140 * 0.7 * 1.3),
+      WALL_MARGIN: 120,
+      ENEMY_SPAWN_MARGIN: 600,
+      WALLS: {
+        BASE_RECT_COUNT: 4,
+        RECT_COUNT_FORMULA: {base: 16, multiplier: 4, scaling: 0.5},
+        BASE_CIRCLE_COUNT: 3,
+        CIRCLE_COUNT_FORMULA: {base: 10, multiplier: 3, scaling: 0.5},
+        RECT_SIZE_MIN: 28,
+        RECT_SIZE_MAX: 60,
+        CIRCLE_SIZE_MIN: 14,
+        CIRCLE_SIZE_MAX: 32
+      },
+      ENEMIES: {
+        TURRET: {base: 6, multiplier: 2, scaling: 0.5},
+        FAST_TANK: {base: 4, multiplier: 1.5, scaling: 0.5},
+        SPREAD_TANK: {base: 2, multiplier: 1, scaling: 0.5}
+      }
+    },
+
+    // Boss Configuration
+    BOSS: {
+      RADIUS: 40,
+      HP: 30,
+      COLOR: '#ff8c42',
+      SHOOT_INTERVAL: 2,
+      BULLET_COUNT: 16,
+      BULLET_SPEED: 400,
+      BULLET_DAMAGE: 1,
+      SPEED: 200
+    },
+
+    // Power-up Stars Configuration
+    STARS: {
+      MAX_STARS: 3,
+      SPAWN_INTERVAL_MIN: 10,
+      SPAWN_INTERVAL_MAX: 20,
+      INVINCIBILITY_DURATION: 10,
+      SPEED_BOOST_MULTIPLIER: 2.0,
+      FIRE_RATE_MULTIPLIER: 2.0,
+      SPREAD_ANGLE: 0.3,
+      STAR_RADIUS: 12,
+      TYPES: {
+        RAINBOW: { color: '#ff69b4', effect: 'invincibility', ratio: 1 },
+        ORANGE: { color: '#ff8c42', effect: 'bouncing', ratio: 2 },
+        GREEN: { color: '#32cd32', effect: 'speed', ratio: 2 },
+        PURPLE: { color: '#9370db', effect: 'spread', ratio: 5 },
+        BLUE: { color: '#4169e1', effect: 'fireRate', ratio: 6 },
+        RED: { color: '#ff0000', effect: 'heal', ratio: 2 }
+      }
+    },
+
+    // Game System
+    SYSTEM: {
+      MAX_FRAME_TIME: 0.033,
+      FALLBACK_FRAME_TIME: 0.016,
+      TOTAL_LEVELS: 5,
+      WALL_COLLISION_OFFSET: 0.5,
+      BOUND_CLAMP_OFFSET: 1
+    }
+  };
+
+  // ===================== Utility =====================
+  const TAU = Math.PI * 2;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const randRange = (a,b) => a + Math.random()*(b-a);
+  const dist2 = (ax,ay,bx,by)=>{const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy;};
+  const now = ()=> performance.now();
+
+  function vecNorm(x,y){ const m = Math.hypot(x,y) || 1; return {x:x/m, y:y/m}; }
+  function refl(vx,vy, nx,ny){ // reflect v about normal n (assumed normalized)
+    const dot = vx*nx + vy*ny; return {x: vx - 2*dot*nx, y: vy - 2*dot*ny};
+  }
+
+  // ===================== Audio (Sound Effects + Background Music) =====================
+  const AudioSys = (()=>{
+    let ctx=null, master=null, gain=0.25, enabled=true;
+    let musicEl=null;
+    function ensure(){ if(!ctx){ ctx = new (window.AudioContext||window.webkitAudioContext)(); master = ctx.createGain(); master.gain.value = gain; master.connect(ctx.destination);} }
+    function playTone(freq, dur=0.12){ if(!enabled || !ctx || !freq) return; const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='sine'; o.frequency.value=freq; g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.linearRampToValueAtTime(0.06, ctx.currentTime+0.02); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+dur); o.connect(g); g.connect(master); o.start(); o.stop(ctx.currentTime+dur+0.02); }
+    function playTone2(freq, dur=0.1, mul=0.6){ if(!enabled || !ctx || !freq) return; const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='square'; o.frequency.value=freq; g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.linearRampToValueAtTime(0.06*(mul||1), ctx.currentTime+0.015); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+dur); o.connect(g); g.connect(master); o.start(); o.stop(ctx.currentTime+dur+0.02); }
+    function playKick(){ if(!enabled || !ctx) return; const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='sine'; o.frequency.setValueAtTime(150, ctx.currentTime); o.frequency.exponentialRampToValueAtTime(55, ctx.currentTime+0.12); g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.linearRampToValueAtTime(0.18, ctx.currentTime+0.008); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.22); o.connect(g); g.connect(master); o.start(); o.stop(ctx.currentTime+0.25); }
+    function playHat(){ if(!enabled || !ctx) return; const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='square'; o.frequency.value=8000; g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.linearRampToValueAtTime(0.05, ctx.currentTime+0.004); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.03); o.connect(g); g.connect(master); o.start(); o.stop(ctx.currentTime+0.05); }
+    function playBass(freq){ if(!enabled || !ctx || !freq) return; const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='triangle'; o.frequency.value=freq; g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.linearRampToValueAtTime(0.08, ctx.currentTime+0.02); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.22); o.connect(g); g.connect(master); o.start(); o.stop(ctx.currentTime+0.25); }
+    
+    // Sound Effects
+    function shoot(){ playTone(740, 0.1); }
+    function hit(){ playTone(1480, 0.2); playTone2(1480, 0.2, 0.4);}
+    function hurt(){ playTone2(220.00, 0.15); playTone2(230.00, 0.2, 0.4); }
+    function enemyDeath(){ 
+      // Simulate a crash/explosion: combine a hat, a low kick, and a high-pitched burst
+      playHat(1000, 0.08); 
+      playKick(); 
+      playTone2(2960, 0.18, 0.5); // sharp burst
+      playTone(370, 0.22); // low rumble
+    }
+    function death(){ playTone2(110.00, 0.3); playTone2(98.00, 0.4, 0.6); }
+    
+    // Power-up sound (resonant chord)
+    function powerUp(){ 
+      playTone(740.0, 0.3); // F#
+      playTone(1109.0, 0.3); // C#
+      playTone(1480.0, 0.3); // F#
+    }
+    // Background music (HTMLAudioElement)
+    function _ensureMusic(levelIndex){ 
+      if(!musicEl || musicEl.src !== `${window.location.origin}${window.location.pathname.replace(/\/[^\/]*$/, '')}/level_${levelIndex + 1}.mp3`){
+        if(musicEl){ musicEl.pause(); }
+        musicEl = new Audio(`level_${levelIndex + 1}.mp3`); 
+        musicEl.loop = true; 
+        musicEl.volume = 0.05; 
+      }
+    }
+    function playMusic(levelIndex = 0){ _ensureMusic(levelIndex); musicEl.play().catch(()=>{}); }
+    function stopMusic(){ if(musicEl){ musicEl.pause(); musicEl.currentTime = 0; } }
+    
+    // Level clear sound (major chord)
+    function levelClear(){ 
+      playTone(523.25, 0.8); // C
+      playTone(659.25, 0.8); // E  
+      playTone(783.99, 0.8); // G
+    }
+    
+    return {
+      shoot, hit, hurt, enemyDeath, death, levelClear, powerUp,
+      playMusic, stopMusic,
+      toggle(){ enabled=!enabled; return enabled; },
+      init(){ ensure(); }
+    };
+  })();
+
+  // ===================== Input =====================
+  const Keys = { down: new Set() };
+  window.addEventListener('keydown', e=>{ 
+    Keys.down.add(e.key); 
+    if(e.key==='m' || e.key==='M'){ toggleMusic(); } 
+    if(e.key==='r' || e.key==='R'){ restartLevel(); } 
+    if(e.key==='Enter' && Game.state==='menu'){ startGame(); }
+    if(e.key==='l' || e.key==='L'){ showLevelSelect(); }
+    if(e.key==='Escape'){ hideLevelSelect(); }
+    
+    // New cooperative ability inputs
+    if(e.key === ' ' || e.key === 'Spacebar'){ // Spacebar for combined attack
+      if(Game.state === 'playing' && Game.combinedAttackCooldown <= 0){
+        triggerCombinedAttack();
+      }
+    }
+    if(e.key === 'Shift'){ // Shift key for leash damage
+      if(Game.state === 'playing' && Game.leashDamageCooldown <= 0){
+        triggerLeashDamage();
+      }
+    }
+  });
+  window.addEventListener('keyup', e=> Keys.down.delete(e.key));
+
+  // ===================== Game Entities =====================
+  const Game = {
+    canvas: null, ctx: null,
+    vw: 0, vh: 0, // viewport px
+    levelIndex: 0,
+    state: 'menu', // menu|playing|pause|over|transition
+    camera: {x:0,y:0},
+    // Screen shake system
+    screenShake: {x:0, y:0, intensity:0, duration:0},
+    bullets: [], walls: [], enemies: [], particles: [],
+    red: null, blue: null, sharedHP: GAME_CONFIG.PLAYER.SHARED_HP, sharedHPMax: GAME_CONFIG.PLAYER.SHARED_HP,
+    level: null,
+    lastTime: 0,
+    stars: [],
+    starSpawnTimer: 0,
+    powerUps: {
+      invincibility: 0,
+      bouncing: 0,
+      speed: 0,
+      spread: 0,
+      fireRate: 0
+    },
+    // Multiplicative power-up state
+    powerUpStacks: { speed: 0, fireRate: 0, spread: 0 },
+    powerUpDurations: { speed: [], fireRate: [], spread: [] },
+    // New cooperative mechanics
+    sharedEnergy: GAME_CONFIG.PLAYER.SHARED_ENERGY,
+    sharedEnergyMax: GAME_CONFIG.PLAYER.SHARED_ENERGY,
+    combinedAttackCooldown: 0,
+    leashDamageCooldown: 0,
+    leashDamageActive: false,
+    leashDamageStartTime: 0,
+    leashDamageDuration: 0
+  };
+
+  class Player {
+    constructor(x,y,size,color,speed){ this.x=x; this.y=y; this.size=size; this.color=color; this.speed=speed; this.vx=0; this.vy=0; this.alive=true; }
+    rect(){ return {x:this.x-this.size/2, y:this.y-this.size/2, w:this.size, h:this.size}; }
+  }
+
+  class Bullet {
+    constructor(x,y,vx,vy, owner, speed=GAME_CONFIG.BULLET.DEFAULT_SPEED, radius=GAME_CONFIG.BULLET.DEFAULT_RADIUS, damage=GAME_CONFIG.BULLET.DEFAULT_DAMAGE, ricochet=false, bounces=GAME_CONFIG.BULLET.DEFAULT_BOUNCES, maxLife=GAME_CONFIG.BULLET.DEFAULT_MAX_LIFE){ this.x=x; this.y=y; this.vx=vx; this.vy=vy; this.owner=owner; this.speed=speed; this.radius=radius; this.damage=damage; this.ricochet=ricochet; this.bounces=bounces; this.alive=true; this.life=0; this.maxLife=maxLife; }
+  }
+
+  class Enemy {
+    constructor(x,y,type){ 
+      this.x=x; this.y=y; this.r=GAME_CONFIG.ENEMY.RADIUS; this.type=type; this.cool=0; 
+      this.hp = type==='turret'? GAME_CONFIG.ENEMY.HP.TURRET : type==='fastTank'? GAME_CONFIG.ENEMY.HP.FAST_TANK : type==='spreadTank'? GAME_CONFIG.ENEMY.HP.SPREAD_TANK : GAME_CONFIG.ENEMY.HP.TURRET; 
+      this.speed = type==='fastTank'? GAME_CONFIG.ENEMY.SPEED.FAST_TANK : (type==='spreadTank'? GAME_CONFIG.ENEMY.SPEED.SPREAD_TANK : GAME_CONFIG.ENEMY.SPEED.TURRET); 
+      this.ricochet = (type==='turret'); this.spread = (type==='spreadTank'); this.moveTimer=0; 
+    }
+    get alive(){ return this.hp>0; }
+  }
+
+  class Boss {
+    constructor(x, y){
+      this.x = x;
+      this.y = y;
+      this.r = GAME_CONFIG.BOSS.RADIUS;
+      this.hp = GAME_CONFIG.BOSS.HP;
+      this.maxHp = GAME_CONFIG.BOSS.HP;
+      this.shootTimer = 0;
+      this.turretTimer = 0;
+      this.phase = 1; // 1 = normal, 2 = enraged
+    }
+    get alive(){ return this.hp > 0; }
+    
+    // Check if phase should change
+    checkPhaseTransition(){
+      if(this.phase === 1 && this.hp <= this.maxHp / 2){
+        this.phase = 2;
+        // Visual feedback for phase change
+        addScreenShake(8, 0.4);
+        showToast('BOSS ENRAGED!');
+      }
+    }
+  }
+
+  class Star {
+    constructor(x, y, type){
+      this.x = x;
+      this.y = y;
+      this.r = GAME_CONFIG.STARS.STAR_RADIUS;
+      this.type = type;
+      this.alive = true;
+      this.spinAngle = 0;
+    }
+  }
+
+  // Walls are tiny obstacles, rects or circles
+  // wall = {shape:'rect', x,y,w,h} | {shape:'circle', x,y,r}
+
+  // ===================== Level Generation =====================
+  function makeLevel(idx){
+    // Increasing size and enemy variety per level
+    const baseW = GAME_CONFIG.LEVEL.BASE_WIDTH, baseH = GAME_CONFIG.LEVEL.BASE_HEIGHT;
+    const size = { w: baseW + idx * GAME_CONFIG.LEVEL.WIDTH_GROWTH_PER_LEVEL, h: baseH + idx * GAME_CONFIG.LEVEL.HEIGHT_GROWTH_PER_LEVEL };
+
+    const center = { x: size.w/2, y: size.h/2 };
+
+    // Sprinkle small walls
+    const walls = [];
+    const rectFormula = GAME_CONFIG.LEVEL.WALLS.RECT_COUNT_FORMULA;
+    const circFormula = GAME_CONFIG.LEVEL.WALLS.CIRCLE_COUNT_FORMULA;
+    const rectCount = Math.max(GAME_CONFIG.LEVEL.WALLS.BASE_RECT_COUNT, Math.floor((rectFormula.base + idx * rectFormula.multiplier) * rectFormula.scaling));
+    const circCount = Math.max(GAME_CONFIG.LEVEL.WALLS.BASE_CIRCLE_COUNT, Math.floor((circFormula.base + idx * circFormula.multiplier) * circFormula.scaling));
+    
+    function placeRect(){
+      const w = randRange(GAME_CONFIG.LEVEL.WALLS.RECT_SIZE_MIN, GAME_CONFIG.LEVEL.WALLS.RECT_SIZE_MAX), 
+            h = randRange(GAME_CONFIG.LEVEL.WALLS.RECT_SIZE_MIN, GAME_CONFIG.LEVEL.WALLS.RECT_SIZE_MAX);
+      
+      // Try to find a valid position (max 50 attempts to avoid infinite loops)
+      for(let attempt = 0; attempt < 50; attempt++){
+        const x = randRange(GAME_CONFIG.LEVEL.WALL_MARGIN, size.w - GAME_CONFIG.LEVEL.WALL_MARGIN), 
+              y = randRange(GAME_CONFIG.LEVEL.WALL_MARGIN, size.h - GAME_CONFIG.LEVEL.WALL_MARGIN);
+        
+        // Check if too close to players
+        if(tooCloseToPlayers(x, y, 120)) continue;
+        
+        // Check if conflicts with existing obstacles
+        if(conflictsWithObstacles(x, y, {w, h}, walls)) continue;
+        
+        // Valid position found
+        walls.push({shape:'rect', x:x-w/2, y:y-h/2, w, h});
+        return;
+      }
+      
+      // If we couldn't find a valid position, place it anyway (fallback)
+      const x = randRange(GAME_CONFIG.LEVEL.WALL_MARGIN, size.w - GAME_CONFIG.LEVEL.WALL_MARGIN), 
+            y = randRange(GAME_CONFIG.LEVEL.WALL_MARGIN, size.h - GAME_CONFIG.LEVEL.WALL_MARGIN);
+      walls.push({shape:'rect', x:x-w/2, y:y-h/2, w, h});
+    }
+    
+    function placeCirc(){
+      const r = randRange(GAME_CONFIG.LEVEL.WALLS.CIRCLE_SIZE_MIN, GAME_CONFIG.LEVEL.WALLS.CIRCLE_SIZE_MAX);
+      
+      // Try to find a valid position (max 50 attempts to avoid infinite loops)
+      for(let attempt = 0; attempt < 50; attempt++){
+        const x = randRange(GAME_CONFIG.LEVEL.WALL_MARGIN, size.w - GAME_CONFIG.LEVEL.WALL_MARGIN), 
+              y = randRange(GAME_CONFIG.LEVEL.WALL_MARGIN, size.h - GAME_CONFIG.LEVEL.WALL_MARGIN);
+        
+        // Check if too close to players
+        if(tooCloseToPlayers(x, y, 120)) continue;
+        
+        // Check if conflicts with existing obstacles
+        if(conflictsWithObstacles(x, y, {r}, walls)) continue;
+        
+        // Valid position found
+        walls.push({shape:'circle', x, y, r});
+        return;
+      }
+      
+      // If we couldn't find a valid position, place it anyway (fallback)
+      const r_fallback = randRange(GAME_CONFIG.LEVEL.WALLS.CIRCLE_SIZE_MIN, GAME_CONFIG.LEVEL.WALLS.CIRCLE_SIZE_MAX);
+      const x = randRange(GAME_CONFIG.LEVEL.WALL_MARGIN, size.w - GAME_CONFIG.LEVEL.WALL_MARGIN), 
+            y = randRange(GAME_CONFIG.LEVEL.WALL_MARGIN, size.h - GAME_CONFIG.LEVEL_WALL_MARGIN);
+      walls.push({shape:'circle', x, y, r: r_fallback});
+    }
+    
+    for(let i=0;i<rectCount;i++) placeRect();
+    for(let i=0;i<circCount;i++) placeCirc();
+
+    // Enemies: mix
+    const enemies = [];
+    const addEnemy = (type, n)=>{
+      for(let i=0;i<n;i++){
+        // Try to find a valid spawn position (max 30 attempts to avoid infinite loops)
+        for(let attempt = 0; attempt < 30; attempt++){
+          let x, y;
+          
+          // Distribute enemies across different zones for better coverage
+          if(i < Math.floor(n * 0.3)) {
+            // 30% of enemies spawn near edges (more dangerous areas)
+            const edgeZone = 150; // Smaller safe zone for edge spawning
+            if(Math.random() < 0.5) {
+              // Horizontal edges (top/bottom)
+              x = randRange(edgeZone, size.w - edgeZone);
+              y = Math.random() < 0.5 ? randRange(edgeZone, edgeZone + 100) : randRange(size.h - edgeZone - 100, size.h - edgeZone);
+            } else {
+              // Vertical edges (left/right)
+              x = Math.random() < 0.5 ? randRange(edgeZone, edgeZone + 100) : randRange(size.w - edgeZone - 100, size.w - edgeZone);
+              y = randRange(edgeZone, size.h - edgeZone);
+            }
+          } else if(i < Math.floor(n * 0.6)) {
+            // 30% of enemies spawn in mid-range areas
+            const midZone = 250;
+            x = randRange(midZone, size.w - midZone);
+            y = randRange(midZone, size.h - midZone);
+          } else {
+            // 40% of enemies spawn in center area (safer for players)
+            const centerZone = 350;
+            x = randRange(centerZone, size.w - centerZone);
+            y = randRange(centerZone, size.h - centerZone);
+          }
+          
+          // Check if too close to players (enemies need more space than obstacles)
+          if(tooCloseToPlayers(x, y, 200)) continue;
+          
+          // Check if conflicts with obstacles
+          if(conflictsWithObstacles(x, y, {r: GAME_CONFIG.ENEMY.RADIUS}, walls)) continue;
+          
+          // Valid position found
+          enemies.push(new Enemy(x, y, type));
+          break;
+        }
+        
+        // If we couldn't find a valid position, try center area as fallback
+        if(enemies.length < i + 1){
+          const centerZone = 400;
+          const x = randRange(centerZone, size.w - centerZone);
+          const y = randRange(centerZone, size.h - centerZone);
+          enemies.push(new Enemy(x, y, type));
+        }
+      }
+    };
+    const turretFormula = GAME_CONFIG.LEVEL.ENEMIES.TURRET;
+    const fastTankFormula = GAME_CONFIG.LEVEL.ENEMIES.FAST_TANK;
+    const spreadTankFormula = GAME_CONFIG.LEVEL.ENEMIES.SPREAD_TANK;
+    
+    // Calculate enemy counts
+    let turretCount = Math.max(1, Math.floor((turretFormula.base + idx * turretFormula.multiplier) * turretFormula.scaling));
+    let fastTankCount = Math.max(1, Math.floor((fastTankFormula.base + Math.floor(idx * fastTankFormula.multiplier)) * fastTankFormula.scaling));
+    let spreadTankCount = Math.max(1, Math.floor((spreadTankFormula.base + Math.floor(idx * spreadTankFormula.multiplier)) * spreadTankFormula.scaling));
+    
+    // Reduce enemy count for the final level (level 5, index 4) to about half
+    if(idx === 4){
+      turretCount = Math.max(1, Math.floor(turretCount * 0.5));
+      fastTankCount = Math.max(1, Math.floor(fastTankCount * 0.5));
+      spreadTankCount = Math.max(1, Math.floor(spreadTankCount * 0.5));
+    }
+    
+    addEnemy('turret', turretCount);
+    addEnemy('fastTank', fastTankCount);
+    addEnemy('spreadTank', spreadTankCount);
+    
+    // Add boss to level 5
+    if(idx === 4){ // Level 5 (0-indexed)
+      enemies.push(new Boss(size.w/2, size.h/2));
+    }
+
+    // player starts near top-left quadrant, spaced apart a little
+    const startRed = {x: GAME_CONFIG.PLAYER.START_RED_X, y: GAME_CONFIG.PLAYER.START_RED_Y};
+    const startBlue = {x: GAME_CONFIG.PLAYER.START_BLUE_X, y: GAME_CONFIG.PLAYER.START_BLUE_Y};
+
+    return { size, walls, enemies, startRed, startBlue };
+  }
+
+  // ===================== Power-up System =====================
+  function spawnStar(){
+    if(Game.stars.length >= GAME_CONFIG.STARS.MAX_STARS) return;
+    
+    // Try to find a valid spawn position (max 50 attempts to avoid infinite loops)
+    for(let attempt = 0; attempt < 50; attempt++){
+      // Calculate spawn position (avoid walls and edges)
+      const margin = 100;
+      const x = randRange(margin, Game.level.size.w - margin);
+      const y = randRange(margin, Game.level.size.h - margin);
+      
+      // Check if too close to players (stars should be accessible)
+      if(tooCloseToPlayers(x, y, 80)) continue;
+      
+      // Check if conflicts with obstacles
+      if(conflictsWithObstacles(x, y, {r: GAME_CONFIG.STARS.STAR_RADIUS}, Game.walls)) continue;
+      
+      // Check if conflicts with existing stars
+      if(conflictsWithObstacles(x, y, {r: GAME_CONFIG.STARS.STAR_RADIUS}, Game.stars)) continue;
+      
+      // Valid position found - select star type based on ratios
+      const types = Object.entries(GAME_CONFIG.STARS.TYPES);
+      const totalRatio = types.reduce((sum, [_, config]) => sum + config.ratio, 0);
+      let random = Math.random() * totalRatio;
+      
+      let selectedType = types[0][0];
+      for(const [type, config] of types){
+        random -= config.ratio;
+        if(random <= 0){
+          selectedType = type;
+          break;
+        }
+      }
+      
+      Game.stars.push(new Star(x, y, selectedType));
+      return;
+    }
+    
+    // If we couldn't find a valid position, try to spawn anyway (fallback)
+    const margin = 100;
+    const x = randRange(margin, Game.level.size.w - margin);
+    const y = randRange(margin, Game.level.size.h - margin);
+    
+    const types = Object.entries(GAME_CONFIG.STARS.TYPES);
+    const totalRatio = types.reduce((sum, [_, config]) => sum + config.ratio, 0);
+    let random = Math.random() * totalRatio;
+    
+    let selectedType = types[0][0];
+    for(const [type, config] of types){
+      random -= config.ratio;
+      if(random <= 0){
+        selectedType = type;
+        break;
+      }
+    }
+    
+    Game.stars.push(new Star(x, y, selectedType));
+  }
+
+  function updatePowerUps(dt){
+    // Legacy timers: decrement simple timers
+    for(const effect in Game.powerUps){
+      if(Game.powerUps[effect] > 0){
+        Game.powerUps[effect] -= dt;
+        if(Game.powerUps[effect] <= 0){
+          Game.powerUps[effect] = 0;
+        }
+      }
+    }
+
+    // Multiplicative timers: decrement per-instance durations and remove expired
+    for(const effect of ['speed','fireRate','spread']){
+      const arr = Game.powerUpDurations[effect];
+      for(let i=arr.length-1;i>=0;i--){
+        arr[i] -= dt;
+        if(arr[i] <= 0){ arr.splice(i,1); }
+      }
+      Game.powerUpStacks[effect] = arr.length;
+    }
+  }
+
+  function applyPowerUp(type){
+    if(type === 'heal'){
+      // Heal 5 HP
+      Game.sharedHP = Math.min(Game.sharedHPMax, Game.sharedHP + 5);
+      updateHUD();
+      showPowerUpText(type);
+    } else {
+      // Regular power-up
+      const duration = GAME_CONFIG.STARS.INVINCIBILITY_DURATION;
+      Game.powerUps[type] += duration;
+
+      // Multiplicative stacks for specific effects
+      if(type === 'speed' || type === 'fireRate' || type === 'spread'){
+        Game.powerUpDurations[type].push(duration);
+        Game.powerUpStacks[type] = Game.powerUpDurations[type].length; // keep in sync
+      }
+      
+      // Play power-up sound
+      AudioSys.powerUp();
+      
+      // Show power-up text
+      showPowerUpText(type);
+    }
+  }
+
+  function showPowerUpText(type){
+    const messages = {
+      invincibility: 'INVINCIBILITY!',
+      bouncing: 'BOUNCING BULLETS!',
+      speed: 'SPEED BOOST!',
+      spread: 'SPREAD SHOT!',
+      fireRate: 'RAPID FIRE!',
+      heal: '+5 HEALTH!'
+    };
+    
+    const colors = {
+      invincibility: '#ff69b4',
+      bouncing: '#ff8c42',
+      speed: '#32cd32',
+      spread: '#9370db',
+      fireRate: '#4169e1',
+      heal: '#ff0000'
+    };
+    
+    const msg = messages[type] || 'POWER UP!';
+    const color = colors[type] || '#ffffff';
+    
+    // Create floating text
+    const text = document.createElement('div');
+    text.textContent = msg;
+    text.style.cssText = `
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      color: ${color};
+      font-size: 24px;
+      font-weight: bold;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+      z-index: 1000;
+      pointer-events: none;
+    `;
+    
+    document.body.appendChild(text);
+    
+    // Animate and remove
+    text.animate([
+      { opacity: 0, transform: 'translate(-50%, -50%) scale(0.5)' },
+      { opacity: 1, transform: 'translate(-50%, -50%) scale(1.2)' },
+      { opacity: 1, transform: 'translate(-50%, -50%) scale(1)' },
+      { opacity: 0, transform: 'translate(-50%, -50%) scale(1.1)' }
+    ], {
+      duration: 2000,
+      easing: 'ease-out'
+    }).onfinish = () => text.remove();
+  }
+
+  // ===================== Collision Helpers =====================
+  function rectCircleCollide(rx,ry,rw,rh, cx,cy, cr){
+    const nx = clamp(cx, rx, rx+rw), ny = clamp(cy, ry, ry+rh);
+    const dx = cx - nx, dy = cy - ny; return (dx*dx + dy*dy) <= cr*cr;
+  }
+  function rectRectCollide(a,b){ return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y; }
+  function circleCircleCollide(ax,ay,ar, bx,by,br){ return dist2(ax,ay,bx,by) <= (ar+br)*(ar+br); }
+  
+  // Check if two obstacles overlap
+  function obstaclesOverlap(obs1, obs2){
+    if(obs1.shape === 'rect' && obs2.shape === 'rect'){
+      return rectRectCollide(obs1, obs2);
+    } else if(obs1.shape === 'circle' && obs2.shape === 'circle'){
+      return circleCircleCollide(obs1.x, obs1.y, obs1.r, obs2.x, obs2.y, obs2.r);
+    } else {
+      // Mixed shapes - treat circle as bounding box for simplicity
+      if(obs1.shape === 'circle'){
+        const [rect, circle] = [obs2, obs1];
+        return rectCircleCollide(rect.x, rect.y, rect.w, rect.h, circle.x, circle.y, circle.r);
+      } else {
+        const [rect, circle] = [obs1, obs2];
+        return rectCircleCollide(rect.x, rect.y, rect.w, rect.h, circle.x, circle.y, circle.r);
+      }
+    }
+  }
+  
+  // Check if position is too close to player spawns
+  function tooCloseToPlayers(x, y, minDistance = 150){
+    const distToRed = Math.hypot(x - GAME_CONFIG.PLAYER.START_RED_X, y - GAME_CONFIG.PLAYER.START_RED_Y);
+    const distToBlue = Math.hypot(x - GAME_CONFIG.PLAYER.START_BLUE_X, y - GAME_CONFIG.PLAYER.START_BLUE_Y);
+    return distToRed < minDistance || distToBlue < minDistance;
+  }
+  
+  // Check if position conflicts with existing obstacles
+  function conflictsWithObstacles(x, y, size, existingObstacles){
+    for(const obs of existingObstacles){
+      if(obs.shape === 'rect'){
+        // Check if new rect overlaps with existing obstacle
+        const newRect = {x: x - size.w/2, y: y - size.h/2, w: size.w, h: size.h};
+        if(rectRectCollide(newRect, obs)) return true;
+      } else {
+        // Check if new circle overlaps with existing obstacle
+        const newCircle = {x, y, r: size.r};
+        if(circleCircleCollide(newCircle.x, newCircle.y, newCircle.r, obs.x, obs.y, obs.r)) return true;
+      }
+    }
+    return false;
+  }
+
+  function wallNormalAtPoint(wall, px,py){
+    // Approximate surface normal for bounce
+    if(wall.shape==='rect'){
+      const cx = clamp(px, wall.x, wall.x+wall.w);
+      const cy = clamp(py, wall.y, wall.y+wall.h);
+      const dx = px - cx, dy = py - cy;
+      if(Math.abs(dx) > Math.abs(dy)) return {x: Math.sign(dx), y: 0};
+      else return {x:0, y: Math.sign(dy)};
+    } else {
+      const nx = px - wall.x, ny = py - wall.y; const m = Math.hypot(nx,ny)||1; return {x:nx/m, y:ny/m};
+    }
+  }
+
+  // ===================== Core Loop =====================
+  function init(){
+    Game.canvas = document.getElementById('game');
+    Game.ctx = Game.canvas.getContext('2d');
+    resize();
+    window.addEventListener('resize', resize);
+
+    document.getElementById('muteBtn').addEventListener('click', toggleMusic);
+    document.getElementById('resetBtn').addEventListener('click', restartLevel);
+    document.getElementById('levelSelectBtn').addEventListener('click', showLevelSelect);
+
+    // Initialize difficulty selection
+    initDifficultySelection();
+
+    updateHUD();
+    render(0); // initial paint
+  }
+
+  function startGame(){
+    document.getElementById('overlay').style.display='none';
+    AudioSys.init();
+    AudioSys.playMusic(0);
+    Game.levelIndex = 0; loadLevel(0);
+    Game.state='playing';
+    Game.lastTime = now();
+    requestAnimationFrame(tick);
+  }
+
+  function loadLevel(i){
+    Game.levelIndex = i;
+    Game.level = makeLevel(i);
+    Game.enemies = Game.level.enemies;
+    Game.walls = Game.level.walls;
+    Game.bullets = []; Game.particles = [];
+    Game.sharedHPMax = GAME_CONFIG.PLAYER.SHARED_HP; Game.sharedHP = Game.sharedHPMax;
+    Game.red = new Player(Game.level.startRed.x, Game.level.startRed.y, GAME_CONFIG.PLAYER.RED_SIZE, '#ff5555', GAME_CONFIG.PLAYER.RED_SPEED);
+    Game.blue = new Player(Game.level.startBlue.x, Game.level.startBlue.y, GAME_CONFIG.PLAYER.BLUE_SIZE, '#5fb0ff', GAME_CONFIG.PLAYER.BLUE_SPEED);
+    Game.blueShootTimer = 0;
+    
+    // Reset power-ups and stars
+    Game.powerUps = { invincibility: 0, bouncing: 0, speed: 0, spread: 0, fireRate: 0 };
+    Game.stars = [];
+    Game.starSpawnTimer = 0;
+    
+    // Reset power-up stacks and durations
+    Game.powerUpStacks = { speed: 0, fireRate: 0, spread: 0 };
+    Game.powerUpDurations = { speed: [], fireRate: [], spread: [] };
+    
+    // Reset screen shake
+    Game.screenShake = {x: 0, y: 0, intensity: 0, duration: 0};
+    
+    // Reset cooperative mechanics
+    Game.combinedAttackCooldown = 0;
+    Game.leashDamageCooldown = 0;
+    Game.leashDamageActive = false;
+    Game.leashDamageStartTime = 0;
+    Game.leashDamageDuration = 0;
+    
+    // Reset enemy leash damage flags
+    for(const enemy of Game.enemies){
+      enemy.leashDamaged = false;
+    }
+    
+    // Spawn initial star
+    spawnStar();
+    
+    showToast(`Level ${i+1} — Good luck!`);
+    updateHUD();
+    updateBackgroundForLevel();
+    
+    // Change music for new level
+    if(Game.state === 'playing'){
+      AudioSys.playMusic(i);
+    }
+  }
+
+  // Change canvas background color for levels 1-5
+  function updateBackgroundForLevel(){
+    const lvl = Game.levelIndex + 1; // human-readable
+    const colors = ['#2a4a7a', '#4a2a6a', '#2a6a4a', '#6a4a2a', '#6a2a2a']; // blue, purple, green, orange, red (dark, low saturation)
+    const color = colors[Math.min(lvl - 1, colors.length - 1)];
+    // Apply background on canvas element (CSS pixel size maintained by CSS)
+    const cvs = document.getElementById('game');
+    if(cvs){ cvs.style.background = color; }
+  }
+
+  function nextLevel(){
+    AudioSys.levelClear();
+    if(Game.levelIndex < GAME_CONFIG.SYSTEM.TOTAL_LEVELS - 1){ loadLevel(Game.levelIndex+1); }
+    else { Game.state='over'; showToast(`You cleared all ${GAME_CONFIG.SYSTEM.TOTAL_LEVELS} levels! Press R to play again.`); }
+  }
+
+  function restartLevel(){ if(Game.state==='menu') return; loadLevel(Game.levelIndex); }
+  function toggleMusic(){ const on = AudioSys.toggle(); document.getElementById('muteBtn').textContent = on? '🔊 Sound' : '🔇 Sound'; if(on){ AudioSys.playMusic(Game.levelIndex); } else { AudioSys.stopMusic(); } }
+  
+  function showLevelSelect(){
+    if(Game.state==='menu') return;
+    const container = document.getElementById('levelButtons');
+    container.innerHTML = '';
+    
+    for(let i = 0; i < GAME_CONFIG.SYSTEM.TOTAL_LEVELS; i++){
+      const btn = document.createElement('button');
+      btn.textContent = i + 1;
+      btn.style.cssText = 'padding: 8px 12px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); color: #e6edf3; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s;';
+      btn.onmouseover = () => btn.style.background = 'rgba(255,255,255,0.2)';
+      btn.onmouseout = () => btn.style.background = 'rgba(255,255,255,0.1)';
+      btn.onclick = () => { loadLevel(i); hideLevelSelect(); };
+      
+      // Highlight current level
+      if(i === Game.levelIndex){
+        btn.style.background = 'rgba(255,255,255,0.3)';
+        btn.style.borderColor = 'rgba(255,255,255,0.4)';
+      }
+      
+      container.appendChild(btn);
+    }
+    
+    document.getElementById('levelSelectOverlay').style.display = 'grid';
+  }
+  
+  function hideLevelSelect(){
+    document.getElementById('levelSelectOverlay').style.display = 'none';
+  }
+
+  function initDifficultySelection(){
+    // Set initial difficulty (hard is default)
+    GAME_CONFIG.DIFFICULTY.CURRENT = 'hard';
+    updateDifficultyButtons();
+    
+    // Add event listeners for difficulty buttons
+    document.getElementById('easyBtn').addEventListener('click', () => setDifficulty('easy'));
+    document.getElementById('mediumBtn').addEventListener('click', () => setDifficulty('medium'));
+    document.getElementById('hardBtn').addEventListener('click', () => setDifficulty('hard'));
+  }
+
+  function setDifficulty(difficulty){
+    GAME_CONFIG.DIFFICULTY.CURRENT = difficulty;
+    updateDifficultyButtons();
+    updateHUD(); // Update HUD to show new difficulty
+    
+    // Show difficulty change toast
+    const difficultyNames = {
+      easy: 'Easy',
+      medium: 'Medium', 
+      hard: 'Hard'
+    };
+    showToast(`Difficulty set to ${difficultyNames[difficulty]}`);
+  }
+
+  function updateDifficultyButtons(){
+    const currentDifficulty = GAME_CONFIG.DIFFICULTY.CURRENT;
+    
+    // Remove active class from all buttons
+    document.querySelectorAll('.difficultyBtn').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    
+    // Add active class to current difficulty button
+    const activeBtn = document.getElementById(currentDifficulty + 'Btn');
+    if(activeBtn){
+      activeBtn.classList.add('active');
+    }
+  }
+
+  function resize(){ Game.vw = Game.canvas.width = window.innerWidth * devicePixelRatio; Game.vh = Game.canvas.height = window.innerHeight * devicePixelRatio; Game.ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); }
+
+  function tick(t){
+    const dt = Math.min(GAME_CONFIG.SYSTEM.MAX_FRAME_TIME, (t - Game.lastTime)/1000 || GAME_CONFIG.SYSTEM.FALLBACK_FRAME_TIME); // clamp delta
+    Game.lastTime = t;
+    if(Game.state==='playing') update(dt);
+    render(dt);
+    if(Game.state!=='menu') requestAnimationFrame(tick);
+  }
+
+  // ===================== Update =====================
+  function update(dt){
+    const { red, blue } = Game;
+
+    // Input
+    let rSpeed = red.speed * GAME_CONFIG.PLAYER.RED_SPEED_MULTIPLIER; // red is slower
+    let bSpeed = blue.speed;
+    
+    // Apply difficulty speed multiplier to players
+    {
+      const difficulty = GAME_CONFIG.DIFFICULTY.CURRENT;
+      const multipliers = GAME_CONFIG.DIFFICULTY.MULTIPLIERS[difficulty];
+      rSpeed *= multipliers.enemySpeed ** 0.5;
+      bSpeed *= multipliers.enemySpeed ** 0.5;
+    }
+    
+    // Apply speed boost power-up (multiplicative stacks)
+    if(Game.powerUpStacks.speed > 0){
+      const mult = Math.pow(GAME_CONFIG.STARS.SPEED_BOOST_MULTIPLIER, Game.powerUpStacks.speed);
+      rSpeed *= mult;
+      bSpeed *= mult;
+    }
+    
+    let rvx = 0, rvy = 0, bvx=0, bvy=0;
+    if(Keys.down.has('w')||Keys.down.has('W')) rvy -= 1;
+    if(Keys.down.has('s')||Keys.down.has('S')) rvy += 1;
+    if(Keys.down.has('a')||Keys.down.has('A')) rvx -= 1;
+    if(Keys.down.has('d')||Keys.down.has('D')) rvx += 1;
+
+    if(Keys.down.has('ArrowUp')) bvy -= 1;
+    if(Keys.down.has('ArrowDown')) bvy += 1;
+    if(Keys.down.has('ArrowLeft')) bvx -= 1;
+    if(Keys.down.has('ArrowRight')) bvx += 1;
+
+    const rN = vecNorm(rvx,rvy), bN = vecNorm(bvx,bvy);
+    red.vx = rN.x * rSpeed; red.vy = rN.y * rSpeed;
+    blue.vx = bN.x * bSpeed; blue.vy = bN.y * bSpeed;
+
+    // Motion + wall collision (simple separation)
+    moveEntitySquare(red, dt);
+    moveEntitySquare(blue, dt);
+
+    // Soft tether: keep players within a maximum distance
+    const leashMax = GAME_CONFIG.PLAYER.LEASH_MAX_DISTANCE; // px
+    const dx = red.x - blue.x, dy = red.y - blue.y; const d = Math.hypot(dx,dy);
+    if(d > leashMax){
+      const excess = d - leashMax; const nx = dx / d, ny = dy / d;
+      red.x -= nx * (excess * 0.5); red.y -= ny * (excess * 0.5);
+      blue.x += nx * (excess * 0.5); blue.y += ny * (excess * 0.5);
+      // re-clamp to bounds after correction
+      red.x = clamp(red.x, red.size/2, Game.level.size.w - red.size/2);
+      red.y = clamp(red.y, red.size/2, Game.level.size.h - red.size/2);
+      blue.x = clamp(blue.x, blue.size/2, Game.level.size.w - blue.size/2);
+      blue.y = clamp(blue.y, blue.size/2, Game.level.size.h - blue.size/2);
+    }
+
+    // Camera centers between players (use viewport in world/CSS units)
+    const targetCx = (red.x + blue.x)/2;
+    const targetCy = (red.y + blue.y)/2;
+    const vwWorld = Game.vw / devicePixelRatio;
+    const vhWorld = Game.vh / devicePixelRatio;
+    Game.camera.x = clamp(targetCx - vwWorld/2, 0, Game.level.size.w - vwWorld);
+    Game.camera.y = clamp(targetCy - vhWorld/2, 0, Game.level.size.h - vhWorld);
+    
+    // Update screen shake
+    updateScreenShake(dt);
+    
+    // Apply screen shake
+    Game.camera.x += Game.screenShake.x;
+    Game.camera.y += Game.screenShake.y;
+
+    // Blue auto-fires toward Red
+    let fireRate = GAME_CONFIG.BLUE_SHOOTING.FIRE_RATE;
+    
+    // Apply fire rate power-up (multiplicative stacks)
+    if(Game.powerUpStacks.fireRate > 0){
+      const mult = Math.pow(GAME_CONFIG.STARS.FIRE_RATE_MULTIPLIER, Game.powerUpStacks.fireRate);
+      fireRate /= mult;
+    }
+    
+    Game.blueShootTimer -= dt;
+    if(Game.blueShootTimer <= 0){
+      Game.blueShootTimer = fireRate; // seconds
+      const dx = red.x - blue.x, dy = red.y - blue.y; const n=vecNorm(dx,dy);
+      const speed = GAME_CONFIG.BULLET.BLUE_SPEED;
+      
+      if(Game.powerUpStacks.spread > 0){
+        // Spread shot - multiplicative stacks: base 1 bullet, each stack multiplies by 3
+        const bulletCount = Math.pow(3, Game.powerUpStacks.spread);
+        const spreadAngle = GAME_CONFIG.STARS.SPREAD_ANGLE;
+        const baseAngle = Math.atan2(n.y, n.x);
+        
+        if(bulletCount === 1){
+          // Single shot
+          Game.bullets.push(new Bullet(blue.x, blue.y, n.x*speed, n.y*speed, 'blue', speed, GAME_CONFIG.BULLET.DEFAULT_RADIUS, GAME_CONFIG.BULLET.DEFAULT_DAMAGE, false, 0));
+        } else {
+          // Multiple bullets in spread pattern
+          const totalSpread = (bulletCount - 1) * spreadAngle;
+          const startAngle = baseAngle - totalSpread / 2;
+          
+          for(let i = 0; i < bulletCount; i++){
+            const angle = startAngle + (i * totalSpread / (bulletCount - 1));
+            const vx = Math.cos(angle) * speed;
+            const vy = Math.sin(angle) * speed;
+            Game.bullets.push(new Bullet(blue.x, blue.y, vx, vy, 'blue', speed, GAME_CONFIG.BULLET.DEFAULT_RADIUS, GAME_CONFIG.BULLET.DEFAULT_DAMAGE, false, 0));
+          }
+        }
+      } else {
+        // Single shot
+        Game.bullets.push(new Bullet(blue.x, blue.y, n.x*speed, n.y*speed, 'blue', speed, GAME_CONFIG.BULLET.DEFAULT_RADIUS, GAME_CONFIG.BULLET.DEFAULT_DAMAGE, false, 0));
+      }
+      
+      AudioSys.shoot();
+    }
+
+    // Enemies behavior
+    for(const e of Game.enemies){ 
+      if(!e.alive) continue; 
+      if(e instanceof Boss){
+        bossAI(e, dt);
+      } else {
+        enemyAI(e, dt); 
+      }
+    }
+
+    // Power-up system
+    updatePowerUps(dt);
+    
+    // Cooperative abilities system (new)
+    updateCooperativeAbilities(dt);
+    
+    // Star spawning
+    Game.starSpawnTimer -= dt;
+    if(Game.starSpawnTimer <= 0){
+      spawnStar();
+      Game.starSpawnTimer = randRange(GAME_CONFIG.STARS.SPAWN_INTERVAL_MIN, GAME_CONFIG.STARS.SPAWN_INTERVAL_MAX);
+    }
+    
+    // Star collision with players
+    for(const star of Game.stars){
+      if(!star.alive) continue;
+      
+      // Check collision with red player
+      const redDist = Math.hypot(star.x - Game.red.x, star.y - Game.red.y);
+      if(redDist < (Game.red.size/2 + star.r)){
+        applyPowerUp(GAME_CONFIG.STARS.TYPES[star.type].effect);
+        star.alive = false;
+        continue;
+      }
+      
+      // Check collision with blue player
+      const blueDist = Math.hypot(star.x - Game.blue.x, star.y - Game.blue.y);
+      if(blueDist < (Game.blue.size/2 + star.r)){
+        applyPowerUp(GAME_CONFIG.STARS.TYPES[star.type].effect);
+        star.alive = false;
+      }
+    }
+    
+    // Cleanup dead stars
+    Game.stars = Game.stars.filter(s => s.alive);
+
+    // Bullets
+    for(const b of Game.bullets){ if(!b.alive) continue; updateBullet(b, dt); }
+    Game.bullets = Game.bullets.filter(b=>b.alive);
+
+    // Cleanup enemies
+    Game.enemies = Game.enemies.filter(e=>e.alive);
+
+    // Win condition
+    if(Game.enemies.length===0){ 
+      // Screen shake for level completion
+      nextLevel(); 
+    }
+  }
+
+  function moveEntitySquare(ent, dt){
+    const nx = ent.x + ent.vx*dt; const ny = ent.y + ent.vy*dt;
+    // bounds
+    ent.x = clamp(nx, ent.size/2, Game.level.size.w - ent.size/2);
+    ent.y = clamp(ny, ent.size/2, Game.level.size.h - ent.size/2);
+    // collide walls
+    const r = ent.rect();
+    for(const w of Game.walls){ if(w.shape==='rect'){
+        const rr = {x: ent.x-ent.size/2, y: ent.y-ent.size/2, w: ent.size, h: ent.size};
+        if(rectRectCollide(rr, w)){
+          // resolve on shallow axis
+          const dx1 = (rr.x+rr.w) - w.x; // overlap from left
+          const dx2 = (w.x+w.w) - rr.x; // overlap from right
+          const dy1 = (rr.y+rr.h) - w.y; // from top
+          const dy2 = (w.y+w.h) - rr.y; // from bottom
+          const minX = Math.min(dx1, dx2); const minY = Math.min(dy1, dy2);
+          if(minX < minY){ ent.x += (dx1<dx2? -dx1 : dx2); }
+          else { ent.y += (dy1<dy2? -dy1 : dy2); }
+        }
+      } else { // circle
+        const half=ent.size/2; if(rectCircleCollide(ent.x-half, ent.y-half, ent.size, ent.size, w.x, w.y, w.r)){
+          const nx = ent.x - w.x, ny = ent.y - w.y; const m = Math.hypot(nx,ny)||1; ent.x = w.x + (nx/m)*(w.r + half + GAME_CONFIG.SYSTEM.WALL_COLLISION_OFFSET); ent.y = w.y + (ny/m)*(w.r + half + GAME_CONFIG.SYSTEM.WALL_COLLISION_OFFSET);
+        }
+      }
+    }
+  }
+
+  function enemyAI(e, dt){
+    e.cool -= dt; e.moveTimer -= dt;
+    
+    // Get current difficulty multipliers
+    const difficulty = GAME_CONFIG.DIFFICULTY.CURRENT;
+    const multipliers = GAME_CONFIG.DIFFICULTY.MULTIPLIERS[difficulty];
+    
+    // Movement: fastTank chases nearest player; spreadTank wanders slowly; turret static
+    if(e.type==='fastTank'){
+      // Calculate distance to each player
+      const distToRed = Math.hypot(Game.red.x - e.x, Game.red.y - e.y);
+      const distToBlue = Math.hypot(Game.blue.x - e.x, Game.blue.y - e.y);
+      
+      // Target the nearest player
+      const target = distToRed < distToBlue ? Game.red : Game.blue;
+      const tx = target.x, ty = target.y;
+      
+      const n = vecNorm(tx-e.x, ty-e.y); 
+      e.x += n.x*e.speed*dt*multipliers.enemySpeed; 
+      e.y += n.y*e.speed*dt*multipliers.enemySpeed;
+    } else if(e.type==='spreadTank'){
+      if(e.moveTimer<=0){ e.moveTimer = GAME_CONFIG.ENEMY.MOVEMENT.SPREAD_TANK_MOVE_TIMER; e.mvDir = {x: randRange(-1,1), y: randRange(-1,1)}; const n = vecNorm(e.mvDir.x,e.mvDir.y); e.mvDir = n; }
+      e.x += (e.mvDir?.x||0)*e.speed*dt*GAME_CONFIG.ENEMY.MOVEMENT.SPREAD_TANK_SPEED_MULTIPLIER*multipliers.enemySpeed; 
+      e.y += (e.mvDir?.y||0)*e.speed*dt*GAME_CONFIG.ENEMY.MOVEMENT.SPREAD_TANK_SPEED_MULTIPLIER*multipliers.enemySpeed;
+    }
+    // Collide with bounds
+    e.x = clamp(e.x, e.r, Game.level.size.w - e.r);
+    e.y = clamp(e.y, e.r, Game.level.size.h - e.r);
+    // Collide with walls (treat enemy as circle)
+    for(const w of Game.walls){ if(w.shape==='rect'){
+        // push out if overlapping
+        const cx = clamp(e.x, w.x, w.x+w.w), cy = clamp(e.y, w.y, w.y+w.h);
+        const dx = e.x - cx, dy = e.y - cy; const d2 = dx*dx+dy*dy; if(d2 < e.r*e.r){ const m = Math.sqrt(d2)||1; const nx = dx/m, ny=dy/m; e.x = cx + nx*(e.r + GAME_CONFIG.SYSTEM.WALL_COLLISION_OFFSET); e.y = cy + ny*(e.r + GAME_CONFIG.SYSTEM.WALL_COLLISION_OFFSET);} 
+      } else { if(circleCircleCollide(e.x,e.y,e.r, w.x,w.y,w.r)){ const nx=e.x-w.x, ny=e.y-w.y; const m=Math.hypot(nx,ny)||1; e.x = w.x + (nx/m)*(e.r+w.r + GAME_CONFIG.SYSTEM.WALL_COLLISION_OFFSET); e.y = w.y + (ny/m)*(e.r+w.r + GAME_CONFIG.SYSTEM.WALL_COLLISION_OFFSET); } }
+    }
+    // Shooting
+    const fireGap = e.type==='turret'? GAME_CONFIG.ENEMY.SHOOTING.TURRET_FIRE_RATE : e.type==='spreadTank'? GAME_CONFIG.ENEMY.SHOOTING.SPREAD_TANK_FIRE_RATE : GAME_CONFIG.ENEMY.SHOOTING.FAST_TANK_FIRE_RATE;
+    if(e.cool<=0){ 
+      e.cool = (fireGap / multipliers.enemyFireRate) + randRange(GAME_CONFIG.ENEMY.SHOOTING.FIRE_VARIANCE_MIN, GAME_CONFIG.ENEMY.SHOOTING.FIRE_VARIANCE_MAX);
+      const target = (Math.random()<0.5? Game.red : Game.blue);
+      const dir = vecNorm(target.x-e.x, target.y-e.y);
+      const speed = GAME_CONFIG.BULLET.ENEMY_SPEED * multipliers.enemyBulletSpeed;
+      if(e.spread){ // 3‑shot
+        const spread = GAME_CONFIG.ENEMY.SHOOTING.SPREAD_ANGLE; // radians
+        const a = Math.atan2(dir.y, dir.x);
+        const angles = [a, a-spread, a+spread];
+        for(const ang of angles){ const vx=Math.cos(ang)*speed, vy=Math.sin(ang)*speed; Game.bullets.push(new Bullet(e.x, e.y, vx, vy, 'enemy', speed, GAME_CONFIG.BULLET.DEFAULT_RADIUS, GAME_CONFIG.BULLET.DEFAULT_DAMAGE, false, 0)); }
+      } else {
+        const ric = e.ricochet; const bnc = ric? GAME_CONFIG.BULLET.RICOCHET_BOUNCES: 0;
+        Game.bullets.push(new Bullet(e.x, e.y, dir.x*speed, dir.y*speed, 'enemy', speed, GAME_CONFIG.BULLET.DEFAULT_RADIUS, GAME_CONFIG.BULLET.DEFAULT_DAMAGE, ric, bnc));
+      }
+    }
+  }
+
+  function bossAI(boss, dt){
+    // Check for phase transition
+    boss.checkPhaseTransition();
+    
+    boss.shootTimer -= dt;
+    boss.turretTimer -= dt;
+    
+    // Get current difficulty multipliers
+    const difficulty = GAME_CONFIG.DIFFICULTY.CURRENT;
+    const multipliers = GAME_CONFIG.DIFFICULTY.MULTIPLIERS[difficulty];
+    
+    // Boss movement - follow the midpoint of both players
+    const targetX = (Game.red.x + Game.blue.x) / 2;
+    const targetY = (Game.red.y + Game.blue.y) / 2;
+    let bossSpeed = GAME_CONFIG.BOSS.SPEED * multipliers.enemySpeed; // Base boss movement speed
+    
+    // Phase 2: 10% faster movement
+    if(boss.phase === 2){
+      bossSpeed *= 1.1;
+    }
+    
+    const dx = targetX - boss.x;
+    const dy = targetY - boss.y;
+    const distance = Math.hypot(dx, dy);
+    
+    if(distance > 0){
+      const moveX = (dx / distance) * bossSpeed * dt;
+      const moveY = (dy / distance) * bossSpeed * dt;
+      boss.x += moveX;
+      boss.y += moveY;
+    }
+    
+    // Keep boss within level bounds (but allow wall passing)
+    boss.x = clamp(boss.x, boss.r, Game.level.size.w - boss.r);
+    boss.y = clamp(boss.y, boss.r, Game.level.size.h - boss.r);
+    
+    // Multi-bullet spread attack
+    if(boss.shootTimer <= 0){
+      // Phase 2: twice as frequent shooting
+      const shootInterval = boss.phase === 2 ? 
+        (GAME_CONFIG.BOSS.SHOOT_INTERVAL / 1.5) / multipliers.enemyFireRate : 
+        GAME_CONFIG.BOSS.SHOOT_INTERVAL / multipliers.enemyFireRate;
+      
+      boss.shootTimer = shootInterval;
+      
+      // Phase 2: 24 bullets, Phase 1: 16 bullets
+      const bulletCount = boss.phase === 2 ? 24 : GAME_CONFIG.BOSS.BULLET_COUNT;
+      const speed = GAME_CONFIG.BOSS.BULLET_SPEED * multipliers.enemyBulletSpeed;
+      const damage = GAME_CONFIG.BOSS.BULLET_DAMAGE;
+      
+      for(let i = 0; i < bulletCount; i++){
+        const angle = (i / bulletCount) * TAU;
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed;
+        Game.bullets.push(new Bullet(boss.x, boss.y, vx, vy, 'enemy', speed, GAME_CONFIG.BULLET.DEFAULT_RADIUS, damage, false, 0));
+      }
+    }
+    
+    // Normal turret shot at random player
+    if(boss.turretTimer <= 0){
+      // Phase 2: twice as frequent turret shots
+      const turretInterval = boss.phase === 2 ? 
+        (GAME_CONFIG.ENEMY.SHOOTING.TURRET_FIRE_RATE / 2) / multipliers.enemyFireRate : 
+        GAME_CONFIG.ENEMY.SHOOTING.TURRET_FIRE_RATE / multipliers.enemyFireRate;
+      
+      boss.turretTimer = turretInterval;
+      
+      const target = (Math.random() < 0.5 ? Game.red : Game.blue);
+      const dir = vecNorm(target.x - boss.x, target.y - boss.y);
+      const speed = GAME_CONFIG.BULLET.ENEMY_SPEED * multipliers.enemyBulletSpeed;
+      Game.bullets.push(new Bullet(boss.x, boss.y, dir.x * speed, dir.y * speed, 'enemy', speed, GAME_CONFIG.BULLET.DEFAULT_RADIUS, GAME_CONFIG.BULLET.DEFAULT_DAMAGE, true, GAME_CONFIG.BULLET.RICOCHET_BOUNCES));
+    }
+  }
+
+  function updateBullet(b, dt){
+    b.x += b.vx*dt; b.y += b.vy*dt;
+    // lifetime cap (max 5s by default)
+    b.life = (b.life||0) + dt;
+    if(b.life >= (b.maxLife||GAME_CONFIG.BULLET.DEFAULT_MAX_LIFE)){ b.alive=false; return; }
+    // world bounds
+    if(b.x < 0 || b.y < 0 || b.x > Game.level.size.w || b.y > Game.level.size.h){
+      // Check for bouncing bullets power-up first
+      if(Game.powerUps.bouncing > 0 && b.owner === 'blue'){
+        // Bouncing bullets bounce off world boundaries
+        if(b.x < 0 || b.x > Game.level.size.w) b.vx *= -1;
+        if(b.y < 0 || b.y > Game.level.size.h) b.vy *= -1;
+        b.x = clamp(b.x, GAME_CONFIG.SYSTEM.BOUND_CLAMP_OFFSET, Game.level.size.w - GAME_CONFIG.SYSTEM.BOUND_CLAMP_OFFSET);
+        b.y = clamp(b.y, GAME_CONFIG.SYSTEM.BOUND_CLAMP_OFFSET, Game.level.size.h - GAME_CONFIG.SYSTEM.BOUND_CLAMP_OFFSET);
+      } else if(b.ricochet && b.bounces>0){ // reflect on bounds
+        if(b.x<0||b.x>Game.level.size.w) b.vx*=-1; if(b.y<0||b.y>Game.level.size.h) b.vy*=-1; b.bounces--; b.x=clamp(b.x, GAME_CONFIG.SYSTEM.BOUND_CLAMP_OFFSET, Game.level.size.w - GAME_CONFIG.SYSTEM.BOUND_CLAMP_OFFSET); b.y=clamp(b.y, GAME_CONFIG.SYSTEM.BOUND_CLAMP_OFFSET, Game.level.size.h - GAME_CONFIG.SYSTEM.BOUND_CLAMP_OFFSET);
+      } else { b.alive=false; return; }
+    }
+
+    // collide with walls
+    for(const w of Game.walls){
+      const hit = (w.shape==='rect') ? rectCircleCollide(w.x,w.y,w.w,w.h, b.x,b.y,b.radius) : circleCircleCollide(b.x,b.y,b.radius, w.x,w.y,w.r);
+      if(hit){
+        // Check for bouncing bullets power-up
+        if(Game.powerUps.bouncing > 0 && b.owner === 'blue'){
+          const n = wallNormalAtPoint(w, b.x, b.y);
+          const rv = refl(b.vx, b.vy, n.x, n.y);
+          b.vx = rv.x;
+          b.vy = rv.y;
+          // Bouncing bullets don't lose bounces
+        } else if(b.ricochet && b.bounces>0){ 
+          const n = wallNormalAtPoint(w, b.x, b.y); 
+          const rv = refl(b.vx, b.vy, n.x, n.y); 
+          b.vx=rv.x; b.vy=rv.y; b.bounces--; 
+        } else { 
+          b.alive=false; 
+        }
+        break;
+      }
+    }
+
+    // collisions with entities
+    if(b.owner==='blue'){
+      // Check collision with red player
+      const halfR = Game.red.size/2;
+      const rrect = {x: Game.red.x-halfR, y: Game.red.y-halfR, w: Game.red.size, h: Game.red.size};
+      if(rectCircleCollide(rrect.x,rrect.y,rrect.w,rrect.h, b.x,b.y,b.radius)){
+        // Check for bouncing bullets power-up
+        if(Game.powerUps.bouncing > 0){
+          // Calculate bounce direction from red player center
+          const dx = b.x - Game.red.x;
+          const dy = b.y - Game.red.y;
+          const distance = Math.hypot(dx, dy);
+          
+          if(distance > 0){
+            // Normalize and reflect the bullet velocity
+            const nx = dx / distance;
+            const ny = dy / distance;
+            const dot = b.vx * nx + b.vy * ny;
+            b.vx = b.vx - 2 * dot * nx;
+            b.vy = b.vy - 2 * dot * ny;
+            
+            // Move bullet slightly away from player to prevent stuck collision
+            b.x = Game.red.x + nx * (halfR + b.radius + 2);
+            b.y = Game.red.y + ny * (halfR + b.radius + 2);
+          }
+        } else {
+          // Light screen shake for bullet collision (no bouncing)
+          b.alive = false;
+        }
+      }
+      
+      // hit enemies
+      for(const e of Game.enemies){
+        if(!e.alive) continue;
+        if(circleCircleCollide(b.x,b.y,b.radius, e.x,e.y,e.r)){
+          e.hp -= b.damage;
+          b.alive = false;
+          spawnHit(e.x,e.y);
+          // Play hit sound on every successful hit
+          AudioSys.hit();
+          // Add screen shake for hit
+          // If the hit killed the enemy, show pop particles
+          if(!e.alive){
+            spawnPop(e.x,e.y);
+            // Play enemy death sound
+            AudioSys.enemyDeath();
+          }
+          break;
+        }
+      }
+    } else if(b.owner==='combined'){
+      // Combined attack bullets - more powerful and can hit multiple enemies
+      let hitEnemies = 0;
+      const maxHits = 3; // Can hit up to 3 enemies before disappearing
+      
+      for(const e of Game.enemies){
+        if(!e.alive || hitEnemies >= maxHits) continue;
+        if(circleCircleCollide(b.x,b.y,b.radius, e.x,e.y,e.r)){
+          e.hp -= b.damage;
+          hitEnemies++;
+          spawnHit(e.x,e.y);
+          // Play hit sound on every successful hit
+          AudioSys.hit();
+          // Add screen shake for hit
+          addScreenShake(4, 0.15);
+          // If the hit killed the enemy, show pop particles
+          if(!e.alive){
+            spawnPop(e.x,e.y);
+            // Play enemy death sound
+            AudioSys.enemyDeath();
+          }
+        }
+      }
+      
+      // Remove bullet if it hit enemies or after max hits
+      if(hitEnemies > 0){
+        b.alive = false;
+      }
+    } else if(b.owner==='enemy'){
+      // check red
+      const halfR = Game.red.size/2, halfB= Game.blue.size/2;
+      const rrect = {x: Game.red.x-halfR, y: Game.red.y-halfR, w: Game.red.size, h: Game.red.size};
+      const brect = {x: Game.blue.x-halfB, y: Game.blue.y-halfB, w: Game.blue.size, h: Game.blue.size};
+      let damaged=false;
+      if(rectCircleCollide(rrect.x,rrect.y,rrect.w,rrect.h, b.x,b.y,b.radius)){ damaged=true; }
+      else if(rectCircleCollide(brect.x,brect.y,brect.w,brect.h, b.x,b.y,b.radius)){ damaged=true; }
+      if(damaged){
+        // Check invincibility power-up
+        if(Game.powerUps.invincibility > 0){
+          // Player is invincible, don't take damage
+          b.alive = false;
+          // Show invincibility effect (could add particles here)
+        } else {
+          b.alive=false; 
+          Game.sharedHP = Math.max(0, Game.sharedHP - b.damage); 
+          updateHUD();
+          // Screen shake for player damage
+          addScreenShake(50, 0.6);
+          if(Game.sharedHP<=0){ 
+            AudioSys.death();
+            showToast('You were defeated! Press R to retry.'); 
+            Game.state='pause'; 
+            // Reset health and restart level after a short delay
+            setTimeout(()=>{ 
+              Game.sharedHP = Game.sharedHPMax; 
+              Game.state='playing'; 
+              restartLevel(); 
+            }, 1500); 
+          } else {
+            AudioSys.hurt();
+          }
+        }
+      }
+    }
+  }
+
+  // ===================== Particles =====================
+  function spawnHit(x,y){ Game.particles.push({x,y, r:8, life:0.18}); }
+  function spawnPop(x,y){ 
+    for(let i=0;i<10;i++){ 
+      const a=Math.random()*TAU; 
+      const s=randRange(80,200); 
+      Game.particles.push({x,y, vx:Math.cos(a)*s, vy:Math.sin(a)*s, r:3, life:0.5}); 
+    }
+    // Screen shake for explosion
+    addScreenShake(6, 0.25);
+  }
+  function updateParticles(dt){ for(const p of Game.particles){ p.life -= dt; if(p.vx){ p.x += p.vx*dt; p.y += p.vy*dt; p.vx*=0.98; p.vy*=0.98; } } Game.particles = Game.particles.filter(p=>p.life>0); }
+
+  // ===================== Render =====================
+  function render(dt){
+    const g = Game.ctx; const { vw, vh } = Game;
+    g.clearRect(0,0,vw,vh);
+    if(!Game.level){ return; }
+
+    // subtle starfield grid parallax
+    const cam = Game.camera; const gridSize=80; g.save();
+    g.translate(-cam.x%gridSize, -cam.y%gridSize);
+    g.globalAlpha=0.15; g.strokeStyle='#1c2942'; for(let y=-gridSize; y<vh+gridSize; y+=gridSize){ g.beginPath(); g.moveTo(0,y); g.lineTo(vw+gridSize,y); g.stroke(); }
+    for(let x=-gridSize; x<vw+gridSize; x+=gridSize){ g.beginPath(); g.moveTo(x,0); g.lineTo(x,vh+gridSize); g.stroke(); }
+    g.restore(); g.globalAlpha=1;
+
+    // World to screen transform
+    g.save(); g.translate(-cam.x, -cam.y);
+
+    // Walls (rock-grey)
+    for(const w of Game.walls){ g.beginPath(); if(w.shape==='rect'){ g.fillStyle='rgba(140,140,140,0.6)'; g.strokeStyle='rgba(90,90,90,0.8)'; g.rect(w.x,w.y,w.w,w.h); g.fill(); g.stroke(); } else { g.fillStyle='rgba(140,140,140,0.6)'; g.strokeStyle='rgba(90,90,90,0.8)'; g.arc(w.x,w.y,w.r,0,TAU); g.fill(); g.stroke(); } }
+
+    // Enemies
+    for(const e of Game.enemies){ 
+      if(!e.alive) continue; 
+      
+      if(e instanceof Boss){
+        // Draw boss
+        g.beginPath();
+        // Phase 2: darker, more menacing color
+        const bossColor = e.phase === 2 ? '#ff6b00' : GAME_CONFIG.BOSS.COLOR;
+        g.fillStyle = bossColor;
+        g.strokeStyle = e.phase === 2 ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0.5)';
+        g.lineWidth = e.phase === 2 ? 6 : 4;
+        g.arc(e.x, e.y, e.r, 0, TAU);
+        g.fill();
+        g.stroke();
+        
+        // Phase 2: add pulsing effect
+        if(e.phase === 2){
+          g.beginPath();
+          g.strokeStyle = 'rgba(255,100,0,0.4)';
+          g.lineWidth = 2;
+          g.arc(e.x, e.y, e.r + 8, 0, TAU);
+          g.stroke();
+        }
+        
+        // Draw boss health bar
+        drawBossHealthBar(e);
+      } else {
+        // Draw regular enemy
+        g.beginPath(); 
+        const col = e.type==='turret'? '#ffcf5f' : e.type==='fastTank'? '#84ff8a' : '#d06bff'; 
+        g.fillStyle = col; 
+        g.strokeStyle = 'rgba(0,0,0,0.35)'; 
+        g.lineWidth=3; 
+        g.arc(e.x,e.y,e.r,0,TAU); 
+        g.fill(); 
+        g.stroke();
+        
+        // Draw health bar above enemy
+        drawEnemyHealthBar(e);
+      }
+    }
+
+    // Players
+    drawSquare(Game.red);
+    drawSquare(Game.blue);
+    
+    // Draw leash and aiming guide
+    drawLeashAndAimingGuide();
+
+    // Bullets
+    for(const b of Game.bullets){ 
+      g.beginPath(); 
+      if(b.owner === 'combined'){
+        // Combined attack bullets - larger, glowing, special color
+        g.fillStyle = '#ff69b4'; // Pink for combined attacks
+        g.shadowColor = '#ff69b4';
+        g.shadowBlur = 15;
+        g.arc(b.x,b.y,b.radius,0,TAU); 
+        g.fill();
+        g.shadowBlur = 0;
+      } else {
+        g.fillStyle = b.owner==='enemy'? '#ffd166' : '#66d9ff'; 
+        g.arc(b.x,b.y,b.radius,0,TAU); 
+        g.fill(); 
+      }
+    }
+
+    // Stars
+    for(const star of Game.stars){
+      if(!star.alive) continue;
+      
+      g.save();
+      g.translate(star.x, star.y);
+      g.rotate(star.spinAngle);
+      
+      // Draw star shape
+      g.beginPath();
+      g.fillStyle = GAME_CONFIG.STARS.TYPES[star.type].color;
+      g.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      g.lineWidth = 2;
+      
+      // Create 5-pointed star
+      for(let i = 0; i < 10; i++){
+        const angle = (i * TAU) / 10;
+        const radius = i % 2 === 0 ? star.r : star.r * 0.5;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        
+        if(i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.closePath();
+      g.fill();
+      g.stroke();
+      
+      g.restore();
+      
+      // Update star rotation
+      star.spinAngle += dt * 2;
+    }
+
+    // Particles with glow effects
+    updateParticles(dt);
+    for(const p of Game.particles){ 
+      const alpha = Math.max(0, p.life*2);
+      const radius = p.vx ? p.r : p.r*(p.life/0.18);
+      
+      // Outer glow
+      g.beginPath(); 
+      g.globalAlpha = alpha * 0.3; 
+      g.fillStyle='#ffffff'; 
+      g.arc(p.x,p.y,radius + 2,0,TAU); 
+      g.fill(); 
+      
+      // Inner glow
+      g.beginPath(); 
+      g.globalAlpha = alpha * 0.6; 
+      g.fillStyle='#ffffff'; 
+      g.arc(p.x,p.y,radius + 10,0,TAU); 
+      g.fill(); 
+      
+      // Main particle
+      g.beginPath(); 
+      g.globalAlpha = alpha; 
+      g.fillStyle='#ffffff'; 
+      g.arc(p.x,p.y,radius,0,TAU); 
+      g.fill(); 
+      g.globalAlpha=1; 
+    }
+
+    g.restore();
+    
+    // Apply lighting system - dark overlay with player light sources
+    applyLighting();
+    
+    // Update HUD every frame for smooth timer updates
+    if(Game.state === 'playing'){
+      updateHUD();
+    }
+  }
+
+  function drawSquare(p){ const g = Game.ctx; g.beginPath(); g.fillStyle = p.color; g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth=4; g.rect(p.x - p.size/2, p.y - p.size/2, p.size, p.size); g.fill(); g.stroke(); }
+  
+  function drawLeashAndAimingGuide(){
+    const g = Game.ctx;
+    const { red, blue } = Game;
+    if(!red || !blue) return;
+    
+    // Calculate distance and direction
+    const dx = red.x - blue.x;
+    const dy = red.y - blue.y;
+    const distance = Math.hypot(dx, dy);
+    const maxDistance = GAME_CONFIG.PLAYER.LEASH_MAX_DISTANCE;
+    
+    // Draw leash line (black to red based on distance, or special effect when damage is active)
+    const leashRatio = Math.min(distance / maxDistance, 1);
+    let leashColor;
+    
+    if(Game.leashDamageActive){
+      // Special effect when leash damage is active
+      leashColor = 'rgba(255, 255, 0, 0.9)'; // Bright yellow
+      g.lineWidth = 8; // Thicker line
+      g.shadowColor = '#ffff00';
+      g.shadowBlur = 20;
+      
+      // Draw damage area indicator with pulsing effect
+      const leashWidth = 60;
+      const pulseIntensity = 0.3 + 0.2 * Math.sin(performance.now() * 0.01); // Pulsing effect
+      
+      // Draw the main damage zone
+      g.beginPath();
+      g.strokeStyle = `rgba(255, 255, 0, ${pulseIntensity})`;
+      g.lineWidth = leashWidth;
+      g.globalAlpha = 0.3;
+      g.moveTo(red.x, red.y);
+      g.lineTo(blue.x, blue.y);
+      g.stroke();
+      
+      // Draw additional glow effect
+      g.beginPath();
+      g.strokeStyle = `rgba(255, 255, 0, ${pulseIntensity * 0.5})`;
+      g.lineWidth = leashWidth + 20;
+      g.globalAlpha = 0.15;
+      g.moveTo(red.x, red.y);
+      g.lineTo(blue.x, blue.y);
+      g.stroke();
+      
+      // Draw debug collision area (80 pixels wide as used in collision detection)
+      g.beginPath();
+      g.strokeStyle = `rgba(255, 0, 255, ${pulseIntensity * 0.7})`; // Magenta for debug
+      g.lineWidth = 80; // Match the collision detection width
+      g.globalAlpha = 0.2;
+      g.moveTo(red.x, red.y);
+      g.lineTo(blue.x, blue.y);
+      g.stroke();
+      
+      g.globalAlpha = 0.9;
+    } else {
+      leashColor = `rgba(${Math.floor(leashRatio * 255)}, 0, 0, 0.6)`;
+      g.lineWidth = 3;
+      g.shadowBlur = 0;
+    }
+    
+    g.beginPath();
+    g.strokeStyle = leashColor;
+    g.moveTo(red.x, red.y);
+    g.lineTo(blue.x, blue.y);
+    g.stroke();
+    
+    // Reset shadow and line width
+    g.shadowBlur = 0;
+    g.lineWidth = 3;
+    
+    // Draw aiming guide (dashed white line extending from red player)
+    const guideLength = 10000; // pixels
+    const nx = dx / distance; // normalized direction
+    const ny = dy / distance;
+    
+    g.beginPath();
+    g.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    g.lineWidth = 2;
+    g.globalAlpha = 0.5;
+    g.setLineDash([8, 4]); // dashed pattern
+    g.moveTo(red.x, red.y);
+    g.lineTo(red.x + nx * guideLength, red.y + ny * guideLength);
+    g.stroke();
+    g.setLineDash([]); // reset dash pattern
+    
+    g.globalAlpha = 1; // reset alpha
+  }
+  
+  function drawEnemyHealthBar(enemy){
+    const g = Game.ctx;
+    const maxHP = enemy.type==='turret'? GAME_CONFIG.ENEMY.HP.TURRET : 
+                  enemy.type==='fastTank'? GAME_CONFIG.ENEMY.HP.FAST_TANK : 
+                  GAME_CONFIG.ENEMY.HP.SPREAD_TANK;
+    const currentHP = enemy.hp;
+    const healthRatio = currentHP / maxHP;
+    
+    // Health bar dimensions
+    const barWidth = 32;
+    const barHeight = 4;
+    const barY = enemy.y - enemy.r - 12; // 12 pixels above enemy
+    const barX = enemy.x - barWidth / 2;
+    
+    // Draw background (empty health bar)
+    g.beginPath();
+    g.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    g.rect(barX, barY, barWidth, barHeight);
+    g.fill();
+    
+    // Draw health fill (green)
+    g.beginPath();
+    g.fillStyle = 'rgba(0, 255, 0, 0.8)';
+    g.rect(barX, barY, barWidth * healthRatio, barHeight);
+    g.fill();
+    
+    // Draw border
+    g.beginPath();
+    g.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    g.lineWidth = 1;
+    g.rect(barX, barY, barWidth, barHeight);
+    g.stroke();
+  }
+  
+  function drawBossHealthBar(boss){
+    const g = Game.ctx;
+    const maxHP = GAME_CONFIG.BOSS.HP;
+    const currentHP = boss.hp;
+    const healthRatio = currentHP / maxHP;
+    
+    // Boss health bar dimensions (larger than regular enemies)
+    const barWidth = 80;
+    const barHeight = 6;
+    const barY = boss.y - boss.r - 20; // 20 pixels above boss
+    const barX = boss.x - barWidth / 2;
+    
+    // Draw background (empty health bar)
+    g.beginPath();
+    g.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    g.rect(barX, barY, barWidth, barHeight);
+    g.fill();
+    
+    // Draw health fill (orange to red gradient)
+    const gradient = g.createLinearGradient(barX, barY, barX + barWidth, barY);
+    gradient.addColorStop(0, 'rgba(255, 140, 66, 0.9)'); // orange
+    gradient.addColorStop(1, 'rgba(255, 59, 59, 0.9)');  // red
+    
+    g.beginPath();
+    g.fillStyle = gradient;
+    g.rect(barX, barY, barWidth * healthRatio, barHeight);
+    g.fill();
+    
+    // Draw border
+    g.beginPath();
+    g.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    g.lineWidth = 2;
+    g.rect(barX, barY, barWidth, barHeight);
+    g.stroke();
+  }
+
+  // ===================== HUD / UX =====================
+  function updateHUD(){ 
+    const hp = Game.sharedHP, max=Game.sharedHPMax; 
+    const pct = (hp/max)*100; 
+    document.getElementById('healthFill').style.width = pct+'%'; 
+    document.getElementById('healthTxt').textContent = `${hp}/${max}`; 
+    document.getElementById('levelTxt').textContent = (Game.levelIndex+1); 
+    
+    // Update difficulty display
+    const difficulty = GAME_CONFIG.DIFFICULTY.CURRENT;
+    const difficultyNames = {
+      easy: 'Easy',
+      medium: 'Medium',
+      hard: 'Hard'
+    };
+    const difficultyColors = {
+      easy: '#4caf50',
+      medium: '#ff9800', 
+      hard: '#f44336'
+    };
+    const difficultyEl = document.getElementById('difficultyTxt');
+    difficultyEl.textContent = difficultyNames[difficulty];
+    difficultyEl.style.color = difficultyColors[difficulty];
+    
+    // Update power-up indicators
+    updatePowerUpHUD();
+    
+    // Update cooperative abilities HUD
+    updateCooperativeHUD();
+  }
+  
+  function updatePowerUpHUD(){
+    const powerUpNames = {
+      invincibility: '🛡️',
+      bouncing: '⚡',
+      speed: '🏃',
+      spread: '🎯',
+      fireRate: '🔥'
+    };
+    
+    // Find or create power-up display
+    let powerUpDisplay = document.getElementById('powerUpDisplay');
+    if(!powerUpDisplay){
+      powerUpDisplay = document.createElement('div');
+      powerUpDisplay.id = 'powerUpDisplay';
+      powerUpDisplay.style.cssText = 'position: absolute; right: 12px; top: 60px; display: flex; flex-direction: column; gap: 4px; z-index: 2;';
+      document.getElementById('wrap').appendChild(powerUpDisplay);
+    }
+    
+    powerUpDisplay.innerHTML = '';
+    
+    // Show active power-ups
+    for(const [effect, time] of Object.entries(Game.powerUps)){
+      if(time > 0){
+        const div = document.createElement('div');
+        div.style.cssText = 'background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 6px; font-size: 12px; color: #e6edf3;';
+        
+        let effectText = powerUpNames[effect];
+        let timeText = `${Math.ceil(time)}s`;
+        
+        // Show multiplicative stack strength while active
+        if(effect === 'speed'){
+          const stacks = Game.powerUpStacks.speed;
+          const mult = Math.pow(GAME_CONFIG.STARS.SPEED_BOOST_MULTIPLIER, stacks);
+          effectText += ` ${mult.toFixed(1)}x`;
+        } else if(effect === 'fireRate'){
+          const stacks = Game.powerUpStacks.fireRate;
+          const mult = Math.pow(GAME_CONFIG.STARS.FIRE_RATE_MULTIPLIER, stacks);
+          effectText += ` ${mult.toFixed(1)}x`;
+        } else if(effect === 'spread'){
+          const stacks = Game.powerUpStacks.spread;
+          const bullets = Math.pow(3, stacks);
+          effectText += ` ${bullets} bullets`;
+        } else if(effect === 'heal'){
+          // Healing is instant, no timer display needed
+          return; // Don't show healing in the HUD since it's instant
+        }
+        
+        div.textContent = `${effectText} ${timeText}`;
+        powerUpDisplay.appendChild(div);
+      }
+    }
+  }
+  
+  function updateCooperativeHUD(){
+    // Find or create cooperative abilities display
+    let coopDisplay = document.getElementById('coopDisplay');
+    if(!coopDisplay){
+      coopDisplay = document.createElement('div');
+      coopDisplay.id = 'coopDisplay';
+      coopDisplay.style.cssText = 'position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 2;';
+      document.getElementById('wrap').appendChild(coopDisplay);
+    }
+    
+    coopDisplay.innerHTML = '';
+    
+    // Cooperative abilities status
+    const abilitiesDiv = document.createElement('div');
+    abilitiesDiv.style.cssText = 'background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.3); padding: 8px; border-radius: 8px; min-width: 200px;';
+    
+    const abilitiesTitle = document.createElement('div');
+    abilitiesTitle.style.cssText = 'font-size: 12px; color: #e6edf3; text-align: center; margin-bottom: 6px; font-weight: bold;';
+    abilitiesTitle.textContent = 'COOPERATIVE ABILITIES';
+    
+    abilitiesDiv.appendChild(abilitiesTitle);
+    
+    // Combined Attack
+    const combinedDiv = document.createElement('div');
+    combinedDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 11px;';
+    
+    const combinedLabel = document.createElement('span');
+    combinedLabel.textContent = '💥 Combined Attack (Space)';
+    combinedLabel.style.color = Game.combinedAttackCooldown > 0 ? '#666' : '#4caf50';
+    
+    const combinedCooldown = document.createElement('span');
+    combinedCooldown.textContent = Game.combinedAttackCooldown > 0 ? `${Game.combinedAttackCooldown.toFixed(1)}s` : 'READY';
+    combinedCooldown.style.color = Game.combinedAttackCooldown > 0 ? '#ff9800' : '#4caf50';
+    
+    combinedDiv.appendChild(combinedLabel);
+    combinedDiv.appendChild(combinedCooldown);
+    abilitiesDiv.appendChild(combinedDiv);
+    
+    // Leash Damage
+    const leashDiv = document.createElement('div');
+    leashDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 11px;';
+    
+    const leashLabel = document.createElement('span');
+    leashLabel.textContent = '⚡ Leash Damage (Shift)';
+    leashLabel.style.color = Game.leashDamageCooldown > 0 ? '#666' : '#2196f3';
+    
+    const leashCooldown = document.createElement('span');
+    leashCooldown.textContent = Game.leashDamageCooldown > 0 ? `${Game.leashDamageCooldown.toFixed(1)}s` : 'READY';
+    leashCooldown.style.color = Game.leashDamageCooldown > 0 ? '#ff9800' : '#2196f3';
+    
+    leashDiv.appendChild(leashLabel);
+    leashDiv.appendChild(leashCooldown);
+    abilitiesDiv.appendChild(leashDiv);
+    
+    // Active status indicators
+    if(Game.leashDamageActive){
+      const activeDiv = document.createElement('div');
+      activeDiv.style.cssText = 'text-align: center; font-size: 11px; color: #ffeb3b; font-weight: bold; margin-top: 4px;';
+      
+      // Calculate remaining time
+      const currentTime = performance.now();
+      const elapsed = currentTime - Game.leashDamageStartTime;
+      const remaining = Math.max(0, (Game.leashDamageDuration - elapsed) / 1000);
+      
+      activeDiv.textContent = `⚡ LEASH DAMAGE ZONE: ${remaining.toFixed(1)}s`;
+      abilitiesDiv.appendChild(activeDiv);
+    }
+    
+    coopDisplay.appendChild(abilitiesDiv);
+  }
+
+
+
+  function applyLighting(){
+    const g = Game.ctx;
+    const { vw, vh } = Game;
+    const cam = Game.camera;
+    
+    // Create a temporary canvas for the lighting mask
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = vw;
+    tempCanvas.height = vh;
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    // Fill the temp canvas with black (the dark mask)
+    tempCtx.fillStyle = 'rgba(60, 40, 80, 0.99)';
+    tempCtx.fillRect(0, 0, vw, vh);
+    
+    // Remove light areas from the mask
+    if(Game.red && Game.blue){
+      // Red player light
+      const redScreenX = Game.red.x - cam.x;
+      const redScreenY = Game.red.y - cam.y;
+      const redLightRadius = 500;
+      
+      // Blue player light
+      const blueScreenX = Game.blue.x - cam.x;
+      const blueScreenY = Game.blue.y - cam.y;
+      const blueLightRadius = 400;
+      
+      // Create a combined light mask first (union of solid discs), then blur once
+      const lightCanvas = document.createElement('canvas');
+      lightCanvas.width = vw;
+      lightCanvas.height = vh;
+      const lightCtx = lightCanvas.getContext('2d');
+      
+      // Draw solid discs (full white) for each light to build a union mask
+      lightCtx.globalCompositeOperation = 'source-over';
+      lightCtx.fillStyle = 'rgba(255,255,255,1)';
+      lightCtx.beginPath();
+      lightCtx.arc(redScreenX, redScreenY, redLightRadius, 0, TAU);
+      lightCtx.arc(blueScreenX, blueScreenY, blueLightRadius, 0, TAU);
+      lightCtx.fill();
+
+      // Blur the union mask to create smooth falloff (GPU-accelerated)
+      const blurCanvas = document.createElement('canvas');
+      blurCanvas.width = vw;
+      blurCanvas.height = vh;
+      const blurCtx = blurCanvas.getContext('2d');
+      // Blur amount approximates previous gradient softness; tweak as desired
+      blurCtx.filter = 'blur(80px)';
+      blurCtx.drawImage(lightCanvas, 0, 0);
+      // Optional: strengthen core by drawing again with smaller blur
+      // blurCtx.filter = 'blur(30px)';
+      // blurCtx.drawImage(lightCanvas, 0, 0);
+
+      // Now remove the blurred union light area from the dark mask
+      tempCtx.globalCompositeOperation = 'destination-out';
+      tempCtx.drawImage(blurCanvas, 0, 0);
+    }
+    
+    // Apply the prepared mask to the main canvas
+    g.save();
+    g.globalCompositeOperation = 'multiply';
+    g.drawImage(tempCanvas, 0, 0);
+    g.restore();
+  }
+
+  function updateScreenShake(dt){
+    if(Game.screenShake.duration > 0){
+      Game.screenShake.duration -= dt;
+      
+      // Calculate shake intensity (decay over time)
+      const progress = Game.screenShake.duration / Game.screenShake.intensity;
+      const currentIntensity = Game.screenShake.intensity * progress;
+      
+      // Generate random shake offset (increased multiplier for more visible shake)
+      Game.screenShake.x = (Math.random() - 0.5) * currentIntensity * 20;
+      Game.screenShake.y = (Math.random() - 0.5) * currentIntensity * 20;
+      
+      // Reset when shake is done
+      if(Game.screenShake.duration <= 0){
+        Game.screenShake.x = 0;
+        Game.screenShake.y = 0;
+        Game.screenShake.intensity = 0;
+        Game.screenShake.duration = 0;
+      }
+    }
+  }
+
+  function addScreenShake(intensity, duration){
+    // Add to existing shake or start new one
+    if(Game.screenShake.duration > 0){
+      // Combine with existing shake
+      Game.screenShake.intensity = Math.max(Game.screenShake.intensity, intensity);
+      Game.screenShake.duration = Math.max(Game.screenShake.duration, duration);
+    } else {
+      // Start new shake
+      Game.screenShake.intensity = intensity;
+      Game.screenShake.duration = duration;
+    }
+  }
+
+  function showToast(msg){ const el = document.getElementById('toast'); el.textContent = msg; el.style.display='block'; el.style.opacity='0.0'; el.animate([{opacity:0, transform:'translateY(8px)'}, {opacity:0.95, transform:'translateY(0)'}], {duration:220, fill:'forwards', easing:'cubic-bezier(.2,.8,.2,1)'}); setTimeout(()=>{ el.animate([{opacity:0.95},{opacity:0}], {duration:250, fill:'forwards'}); setTimeout(()=> el.style.display='none', 260); }, 1700); }
+
+  // ===================== Kickoff =====================
+  init();
+
+  // Accessibility: start on click as well (to unpause audio contexts)
+  document.addEventListener('click', ()=>{ if(Game.state==='menu'){ startGame(); }});
+
+  // ===================== Cooperative Abilities =====================
+  function triggerCombinedAttack(){
+    const { red, blue } = Game;
+    if(!red || !blue) return;
+    
+    // Check if players are close enough for combined attack
+    const distance = Math.hypot(red.x - blue.x, red.y - blue.y);
+    if(distance > GAME_CONFIG.PLAYER.COMBINED_ATTACK_RANGE) {
+      showToast('Players must be closer for combined attack!');
+      return;
+    }
+    
+    // Check cooldown
+    if(Game.combinedAttackCooldown > 0) {
+      showToast('Combined attack recharging...');
+      return;
+    }
+    
+    // Set cooldown (8 seconds)
+    Game.combinedAttackCooldown = GAME_CONFIG.PLAYER.COMBINED_ATTACK_COOLDOWN;
+    
+    // Calculate attack direction (from midpoint between players)
+    const midX = (red.x + blue.x) / 2;
+    const midY = (red.y + blue.y) / 2;
+    
+    // Find nearest enemy for targeting
+    let nearestEnemy = null;
+    let nearestDistance = Infinity;
+    
+    for(const enemy of Game.enemies){
+      if(!enemy.alive) continue;
+      const dist = Math.hypot(enemy.x - midX, enemy.y - midY);
+      if(dist < nearestDistance){
+        nearestDistance = dist;
+        nearestEnemy = enemy;
+      }
+    }
+    
+    // Fire combined attack bullets
+    if(nearestEnemy){
+      // Fire at nearest enemy
+      const dx = nearestEnemy.x - midX;
+      const dy = nearestEnemy.y - midY;
+      const distance = Math.hypot(dx, dy);
+      const nx = dx / distance;
+      const ny = dy / distance;
+      
+      // Create powerful combined attack bullet
+      Game.bullets.push(new Bullet(
+        midX, midY, 
+        nx * GAME_CONFIG.BULLET.COMBINED_ATTACK_SPEED, 
+        ny * GAME_CONFIG.BULLET.COMBINED_ATTACK_SPEED, 
+        'combined', 
+        GAME_CONFIG.BULLET.COMBINED_ATTACK_SPEED,
+        GAME_CONFIG.BULLET.COMBINED_ATTACK_RADIUS,
+        GAME_CONFIG.BULLET.COMBINED_ATTACK_DAMAGE,
+        false, 0, GAME_CONFIG.BULLET.COMBINED_ATTACK_MAX_LIFE
+      ));
+    } else {
+      // Fire in 8 directions if no enemies
+      for(let i = 0; i < 8; i++){
+        const angle = (i / 8) * TAU;
+        const vx = Math.cos(angle) * GAME_CONFIG.BULLET.COMBINED_ATTACK_SPEED;
+        const vy = Math.sin(angle) * GAME_CONFIG.BULLET.COMBINED_ATTACK_SPEED;
+        
+        Game.bullets.push(new Bullet(
+          midX, midY, vx, vy, 'combined',
+          GAME_CONFIG.BULLET.COMBINED_ATTACK_SPEED,
+          GAME_CONFIG.BULLET.COMBINED_ATTACK_RADIUS,
+          GAME_CONFIG.BULLET.COMBINED_ATTACK_DAMAGE,
+          false, 0, GAME_CONFIG.BULLET.COMBINED_ATTACK_MAX_LIFE
+        ));
+      }
+    }
+    
+    // Visual and audio feedback
+    AudioSys.powerUp(); // Use power-up sound for combined attack
+    addScreenShake(12, 0.3);
+    showToast('COMBINED ATTACK!');
+    
+    // Spawn particles at both players
+    spawnPop(red.x, red.y);
+    spawnPop(blue.x, blue.y);
+    
+    updateHUD();
+  }
+  
+  
+  
+  function updateCooperativeAbilities(dt){
+    // Update cooldowns
+    if(Game.combinedAttackCooldown > 0){
+      Game.combinedAttackCooldown -= dt;
+    }
+    
+    if(Game.leashDamageCooldown > 0){
+      Game.leashDamageCooldown -= dt;
+    }
+    
+    // Handle persistent leash damage zone
+    if(Game.leashDamageActive){
+      const currentTime = performance.now();
+      const elapsed = currentTime - Game.leashDamageStartTime;
+      
+      // Check if leash damage zone has expired
+      if(elapsed >= Game.leashDamageDuration){
+        // Reset all enemy leash damage flags when zone expires
+        for(const enemy of Game.enemies){
+          if(enemy.leashDamaged){
+            enemy.leashDamaged = false;
+            console.log(`Reset leash damage flag for enemy at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)})`);
+          }
+        }
+        
+        Game.leashDamageActive = false;
+        Game.leashDamageStartTime = 0;
+        Game.leashDamageDuration = 0;
+        console.log('Leash damage zone expired');
+        return;
+      }
+      
+      // Check for enemies entering the damage zone
+      const { red, blue } = Game;
+      if(red && blue){
+        const leashWidth = 80; // Wider collision area for better reliability
+        
+        for(const enemy of Game.enemies){
+          if(!enemy.alive) continue;
+          
+          // Calculate leash line vector
+          const dx = red.x - blue.x;
+          const dy = red.y - blue.y;
+          const distance = Math.hypot(dx, dy);
+          
+          if(distance === 0) continue;
+          
+          // Calculate distance from enemy to leash line using correct projection
+          const enemyToRedX = enemy.x - red.x;
+          const enemyToRedY = enemy.y - red.y;
+          
+          // Project enemy position onto leash line
+          // This gives us the parameter t where 0 = red player, 1 = blue player
+          const t = (enemyToRedX * dx + enemyToRedY * dy) / (distance * distance);
+          
+          // Clamp t to the leash segment (between 0 and 1)
+          const t_clamped = Math.max(0, Math.min(1, t));
+          
+          // Calculate the closest point on the leash line to the enemy
+          const closestX = red.x + t_clamped * dx;
+          const closestY = red.y + t_clamped * dy;
+          
+          // Calculate the actual distance from enemy to the closest point on leash
+          const distToLeash = Math.hypot(enemy.x - closestX, enemy.y - closestY);
+          
+          // Debug logging
+          console.log(`Enemy at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}), t: ${t.toFixed(3)}, t_clamped: ${t_clamped.toFixed(3)}`);
+          console.log(`Closest point on leash: (${closestX.toFixed(1)}, ${closestY.toFixed(1)})`);
+          console.log(`Distance to leash: ${distToLeash.toFixed(1)}, threshold: ${(enemy.r + leashWidth/2).toFixed(1)}, already damaged: ${enemy.leashDamaged}`);
+          
+          // Check if enemy is in the damage zone
+          if(distToLeash <= (enemy.r + leashWidth/2)){
+            // Check if we haven't already damaged this enemy in this activation
+            if(!enemy.leashDamaged){
+              // Damage the enemy
+              enemy.hp -= GAME_CONFIG.PLAYER.LEASH_DAMAGE_AMOUNT;
+              enemy.leashDamaged = true; // Mark as damaged to prevent multiple hits
+              
+              console.log(`HIT! Enemy damaged, new HP: ${enemy.hp}`);
+              showToast('OUCHHCH');
+              
+              // Visual feedback
+              spawnHit(enemy.x, enemy.y);
+              addScreenShake(3, 0.1);
+              AudioSys.hit();
+              
+              // Check if enemy was killed
+              if(!enemy.alive){
+                spawnPop(enemy.x, enemy.y);
+                AudioSys.enemyDeath();
+              }
+            } else {
+              console.log(`Enemy already damaged in this activation`);
+            }
+          } else {
+            // Additional check: is the enemy within the bounding box of the leash area?
+            // This catches enemies that might be near the leash but outside the line projection
+            const leashStartX = Math.min(red.x, blue.x) - leashWidth/2;
+            const leashStartY = Math.min(red.y, blue.y) - leashWidth/2;
+            const leashEndX = Math.max(red.x, blue.x) + leashWidth/2;
+            const leashEndY = Math.max(red.y, blue.y) + leashWidth/2;
+            
+            const inBoundingBox = enemy.x >= leashStartX && enemy.x <= leashEndX && 
+                                 enemy.y >= leashStartY && enemy.y <= leashEndY;
+            
+            if(inBoundingBox && !enemy.leashDamaged){
+              // Double-check distance to leash line with a more generous threshold
+              const generousThreshold = leashWidth/2 + enemy.r + 10; // Extra 10 pixels for safety
+              
+              if(distToLeash <= generousThreshold){
+                // Damage the enemy
+                enemy.hp -= GAME_CONFIG.PLAYER.LEASH_DAMAGE_AMOUNT;
+                enemy.leashDamaged = true;
+                
+                console.log(`BOUNDING BOX HIT! Enemy in area, new HP: ${enemy.hp}`);
+                showToast('OUCHHCH (area)');
+                
+                // Visual feedback
+                spawnHit(enemy.x, enemy.y);
+                addScreenShake(3, 0.1);
+                AudioSys.hit();
+                
+                // Check if enemy was killed
+                if(!enemy.alive){
+                  spawnPop(enemy.x, enemy.y);
+                  AudioSys.enemyDeath();
+                }
+              }
+            }
+            
+            // Fallback: also check if enemy is very close to either player
+            const distToRed = Math.hypot(enemy.x - red.x, enemy.y - red.y);
+            const distToBlue = Math.hypot(enemy.x - blue.x, enemy.y - blue.y);
+            const closeThreshold = 50; // Close to either player
+            
+            if((distToRed <= closeThreshold || distToBlue <= closeThreshold) && !enemy.leashDamaged){
+              // Damage the enemy
+              enemy.hp -= GAME_CONFIG.PLAYER.LEASH_DAMAGE_AMOUNT;
+              enemy.leashDamaged = true;
+              
+              console.log(`FALLBACK HIT! Enemy close to player, new HP: ${enemy.hp}`);
+              showToast('OUCHHCH (close)');
+              
+              // Visual feedback
+              spawnHit(enemy.x, enemy.y);
+              addScreenShake(3, 0.1);
+              AudioSys.hit();
+              
+              // Check if enemy was killed
+              if(!enemy.alive){
+                spawnPop(enemy.x, enemy.y);
+                AudioSys.enemyDeath();
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  function triggerLeashDamage(){
+    const { red, blue } = Game;
+    if(!red || !blue) return;
+    
+    // Check cooldown
+    if(Game.leashDamageCooldown > 0) {
+      showToast('Leash damage recharging...');
+      return;
+    }
+    
+    // Set cooldown (4 seconds)
+    Game.leashDamageCooldown = GAME_CONFIG.PLAYER.LEASH_DAMAGE_COOLDOWN;
+    
+    // Activate leash damage zone for 1 second
+    Game.leashDamageActive = true;
+    Game.leashDamageStartTime = performance.now();
+    Game.leashDamageDuration = 1000; // 1 second in milliseconds
+    
+    // Debug logging
+    console.log(`Leash damage activated at ${Game.leashDamageStartTime}`);
+    console.log(`Red player at (${red.x.toFixed(1)}, ${red.y.toFixed(1)})`);
+    console.log(`Blue player at (${blue.x.toFixed(1)}, ${blue.y.toFixed(1)})`);
+    console.log(`Leash length: ${Math.hypot(red.x - blue.x, red.y - blue.y).toFixed(1)}`);
+    console.log(`Active enemies: ${Game.enemies.filter(e => e.alive).length}`);
+    
+    // Visual and audio feedback
+    showToast('LEASH DAMAGE ZONE ACTIVATED!');
+    addScreenShake(6, 0.2);
+    
+    updateHUD();
+  }
+
+
+
+  </script>
+</body>
+</html>
